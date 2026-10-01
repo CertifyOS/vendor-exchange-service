@@ -13,6 +13,14 @@
     <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanSystemOut" />
     <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanSystemErr" />
 
+    <!-- File length: 500 for main, 1,000 for tests. Each FileLength module applies to one side only. -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="FileLengthMain" />
+    <suppress files="[/\\]src[/\\]main[/\\]java[/\\]" id="FileLengthTest" />
+
+    <!-- Ticket keys: banned in main; in tests only inside an @Disabled reason, which DisabledNeedsTicket requires. -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanTicketKeys" />
+    <suppress files="[/\\]src[/\\]main[/\\]java[/\\]" id="DisabledNeedsTicket" />
+
     <!-- Test resources -->
     <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]resources.*" checks="." />
 

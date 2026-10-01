@@ -1,63 +1,43 @@
 plugins {
     id 'java'
-    id 'io.quarkus'
     id 'checkstyle'
-    id 'com.diffplug.spotless' version("${spotlessVersion}")
-    id 'com.github.spotbugs' version("${spotbugsVersion}")
     id 'jacoco'
+    alias(libs.plugins.quarkus)
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.spotbugs)
 }
 
 repositories {
-    gradlePluginPortal()
     mavenCentral()
-    mavenLocal()
 }
 
 group "com.certifyos.vendor_exchange"
 version = "1.0.0"
-buildDir = System.getProperty("custom.buildDir", "build")
 
 dependencies {
-    implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
-    implementation 'io.quarkus:quarkus-rest'
-    implementation 'io.quarkus:quarkus-rest-jackson'
-    implementation 'io.quarkus:quarkus-rest-client-jackson'
-    // quarkus-oidc alone validates Auth0 tokens and provides the JsonWebToken CDI bean. No
-    // quarkus-smallrye-jwt beside it: two bearer mechanisms are ambiguous (file-ingestion, Task 2.3).
-    implementation 'io.quarkus:quarkus-oidc'
-    implementation 'io.quarkus:quarkus-security'
-    implementation 'io.quarkus:quarkus-mongodb-client'
-    implementation 'io.quarkus:quarkus-cache'
-    implementation 'io.quarkus:quarkus-smallrye-health'
-    implementation 'io.quarkus:quarkus-smallrye-openapi'
-    implementation 'io.quarkus:quarkus-micrometer-registry-prometheus'
-    implementation 'io.quarkus:quarkus-opentelemetry'
-    implementation 'io.quarkus:quarkus-logging-json'
-    implementation 'io.quarkiverse.googlecloudservices:quarkus-google-cloud-secret-manager:2.15.0'
-    // 2.1.3 fails to augment on Quarkus 3.33.3 (file-ingestion finding 2); 2.3.4 works.
-    implementation 'io.quarkiverse.loggingsentry:quarkus-logging-sentry:2.3.4'
-    // No separate JobRunr MongoDB storage-provider artifact exists on Maven Central: quarkus-jobrunr
-    // uses the quarkus-mongodb-client bean above (file-ingestion finding 1).
-    implementation "org.jobrunr:quarkus-jobrunr:${jobrunrVersion}"
-    implementation 'com.google.cloud:google-cloud-storage:2.45.0'
-    implementation 'com.google.cloud:google-cloud-pubsub:1.134.0'
-    // Declared, not left transitive: Step 5 imports com.google.auth.oauth2.TokenVerifier directly for
-    // the Pub/Sub push identity-token check. Gradle still resolves the highest version the Google
-    // clients above require.
-    implementation 'com.google.auth:google-auth-library-oauth2-http:1.30.0'
-    // UUIDv7 for event ids: JDK 21's java.util.UUID has no v7 factory (file-ingestion finding 66).
-    implementation 'com.fasterxml.uuid:java-uuid-generator:5.1.0'
+    implementation enforcedPlatform(libs.quarkus.bom)
+    implementation libs.bundles.quarkus.runtime
+    implementation libs.quarkus.google.cloud.secret.manager
+    implementation libs.quarkus.logging.sentry
+    // JobRunr storage is the quarkus-mongodb-client bean; no separate storage-provider artifact exists.
+    implementation libs.quarkus.jobrunr
+    implementation libs.google.cloud.storage
+    implementation libs.google.cloud.pubsub
+    // Declared, not left transitive: the Pub/Sub push verifier imports com.google.auth.oauth2.TokenVerifier.
+    implementation libs.google.auth.oauth2.http
+    // UUIDv7 for event ids: JDK 21's java.util.UUID has no v7 factory.
+    implementation libs.java.uuid.generator
 
-    testImplementation 'io.quarkus:quarkus-jacoco'
-    // quarkus-junit5 / quarkus-junit5-mockito are relocation aliases since Quarkus 3.31; these are
-    // the real artifactIds.
-    testImplementation 'io.quarkus:quarkus-junit'
-    testImplementation 'io.quarkus:quarkus-junit-mockito'
-    testImplementation 'io.quarkus:quarkus-test-security-jwt'
-    testImplementation 'io.rest-assured:rest-assured'
-    testImplementation 'org.testcontainers:mongodb:1.20.4'
-    testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
-    testImplementation 'org.awaitility:awaitility:4.2.2'
+    testImplementation libs.bundles.quarkus.test
+}
+
+// Fail the build if a SNAPSHOT dependency ever appears (playbook: no SNAPSHOT on main).
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.version?.endsWith('-SNAPSHOT')) {
+            throw new GradleException("SNAPSHOT dependency not allowed: ${details.requested}")
+        }
+    }
 }
 
 java {
@@ -89,19 +69,19 @@ sourceSets {
 }
 
 checkstyle {
-    toolVersion = "${checkstyleVersion}"
+    toolVersion = libs.versions.checkstyle.get()
     configFile = file('config/checkstyle/checkstyle.xml')
 }
 
 jacoco {
-    toolVersion = '0.8.12'
+    toolVersion = libs.versions.jacoco.get()
 }
 
 spotbugs {
     ignoreFailures = false
     showStackTraces = true
-    showProgress = true
-    reportsDir = file("$buildDir/reports/spotbugs")
+    showProgress = false
+    reportsDir = layout.buildDirectory.dir("reports/spotbugs").get().asFile
     maxHeapSize = '1g'
     excludeFilter = file("config/spotbugs/exclude.xml")
 }
@@ -121,8 +101,8 @@ spotless {
 clean {
     delete sourceSets.integrationTest.output.classesDirs
     delete sourceSets.integrationTest.output.resourcesDir
-    delete file("$buildDir/reports/tests/integrationTest")
-    delete file("$buildDir/test-results/integrationTest")
+    delete layout.buildDirectory.dir("reports/tests/integrationTest")
+    delete layout.buildDirectory.dir("test-results/integrationTest")
 }
 
 checkstyleMain {
@@ -141,8 +121,9 @@ task installGitHooks(type: Copy) {
     fileMode = 0755
 }
 
-// unit test runner config, coverage and jacoco reporting
+// Unit tests: plain JUnit for logic plus ArchUnit. Zero retries, by policy.
 test {
+    useJUnitPlatform()
     jacoco {
         excludeClassLoaders = ["*QuarkusClassLoader"]
         destinationFile = layout.buildDirectory.file("jacoco/jacoco.exec").get().asFile
@@ -162,7 +143,7 @@ jacocoTestReport {
     }
 }
 
-// integration test runner config, coverage and jacoco reporting
+// Integration tests: Quarkus wiring tests on the two role profiles against Testcontainers MongoDB.
 task integrationTest(type: Test) {
     group = "verification"
     description = "run integration tests"
@@ -202,7 +183,6 @@ task jacocoIntegrationTestReport(type: JacocoReport) {
     }
 }
 
-// unified all test runner
 task testAll {
     group = "verification"
     description = "run all test types"

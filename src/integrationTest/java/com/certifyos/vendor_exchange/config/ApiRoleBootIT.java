@@ -84,6 +84,22 @@ public class ApiRoleBootIT {
 
     @Test
     void operatorPathsRequireAuthentication() {
-        RestAssured.get("/vendor-exports/schedules").then().statusCode(401);
+        RestAssured.get("/v1/vendor-exports/schedules").then().statusCode(401);
+    }
+
+    @Test
+    void unknownPathsAreDeniedByDefault() {
+        // deny-all on /* : a path nobody declared is refused before any resource could answer.
+        RestAssured.get("/anything-nobody-declared").then().statusCode(401);
+    }
+
+    @Test
+    void readinessReportsMongo() {
+        RestAssured.get("/q/health/ready")
+                .then()
+                .statusCode(200)
+                .body(
+                        "checks.name",
+                        org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsStringIgnoringCase("mongo")));
     }
 }

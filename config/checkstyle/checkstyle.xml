@@ -41,6 +41,14 @@
     <module name="BeforeExecutionExclusionFileFilter">
         <property name="fileNamePattern" value="module\-info\.java$"/>
     </module>
+    <module name="FileLength"> <!-- Playbook: 500 lines per main file; a bigger file is a class doing too much -->
+        <property name="id" value="FileLengthMain"/>
+        <property name="max" value="500"/>
+    </module>
+    <module name="FileLength"> <!-- Playbook: 1,000 lines per test file -->
+        <property name="id" value="FileLengthTest"/>
+        <property name="max" value="1000"/>
+    </module>
     <module name="LineLength"> <!-- Java Style Guide: No line-wrapping -->
         <property name="max" value="150"/>
         <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://|ftp://|\{@link"/>
@@ -392,9 +400,24 @@
             <property name="processJavadoc" value="true"/>
         </module>
         <module name="UpperEll"/> <!-- Java Style Guide: Numeric Literals -->
-        <module name="VisibilityModifier"> <!-- Java Coding Guidelines: Minimize mutability -->
-            <!-- Package-private @Inject fields are Quarkus's documented recommendation (private ones draw a warning). -->
-            <property name="ignoreAnnotationCanonicalNames" value="jakarta.inject.Inject, org.junit.Rule, org.junit.ClassRule, com.google.common.annotations.VisibleForTesting"/>
+        <module name="VisibilityModifier"/> <!-- Java Coding Guidelines: Minimize mutability. Constructor injection only (ArchitectureTest), so no @Inject field exemption. -->
+        <module name="ParameterNumber"> <!-- Playbook: at most 7 constructor parameters; more means the class does too much -->
+            <property name="max" value="7"/>
+            <property name="tokens" value="CTOR_DEF"/>
+        </module>
+        <module name="RegexpSinglelineJava"> <!-- Playbook: ticket keys live in commits and PRs, never in source -->
+            <property name="id" value="BanTicketKeys"/>
+            <property name="format" value="\bCP-\d{3,}\b"/>
+            <property name="message" value="Ticket keys belong in commits and PRs, not in source. Name the behaviour instead."/>
+        </module>
+        <module name="RegexpSinglelineJava"> <!-- Playbook: every @Disabled carries a reason and a ticket -->
+            <property name="id" value="DisabledNeedsTicket"/>
+            <property name="format" value="@Disabled(?!\(&quot;[^&quot;]*CP-\d{3,})"/>
+            <property name="message" value="@Disabled must carry a reason with a ticket key, e.g. @Disabled(&quot;flaky on CI, CP-12345&quot;)."/>
+        </module>
+        <module name="RegexpSinglelineJava"> <!-- One logger API: JBoss Logging uses printf-style %s via infof/warnf, not SLF4J {} -->
+            <property name="format" value="LOG\.(trace|debug|info|warn|error|fatal)\(.*\{\}"/>
+            <property name="message" value="JBoss Logger has no {} placeholders; use LOG.infof(&quot;%s&quot;, value) or build the message."/>
         </module>
         <module name="WhitespaceAfter"/> <!-- Java Style Guide: Horizontal whitespace -->
         

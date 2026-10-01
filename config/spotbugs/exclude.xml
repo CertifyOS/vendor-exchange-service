@@ -2,11 +2,18 @@
 <!--
     SpotBugs exclusions for com.certifyos.vendor_exchange.
 
-    Empty on purpose. The template's filter named DAL classes that do not exist here, so it
-    excluded nothing while looking like it did. Add a <Match> only for a specific class and a
-    specific bug pattern, with a comment saying why the finding is wrong for that class.
-    Records that hold a List or Map copy it defensively in a compact constructor instead of
-    being excluded from EI_EXPOSE_REP.
+    One policy exclusion, taken from the new-service playbook: the expose-internal-representation
+    rules are disabled once here rather than suppressed class by class (api-layer carries 614
+    @SuppressFBWarnings for them). Records and DTOs here hold immutable Lists and Maps by convention
+    (List.copyOf / Map.copyOf in compact constructors), which these two rules cannot see.
+
+    Every other exclusion must name one class and one pattern and say why the finding is wrong there.
 -->
 <FindBugsFilter>
+    <Match>
+        <Or>
+            <Bug pattern="EI_EXPOSE_REP"/>
+            <Bug pattern="EI_EXPOSE_REP2"/>
+        </Or>
+    </Match>
 </FindBugsFilter>
