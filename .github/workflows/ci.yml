@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # `check` is the whole gate: Spotless, Checkstyle, SpotBugs, unit tests and integration tests
+      # (Testcontainers MongoDB on the runner's Docker). Kept complete from the first commit so the
+      # style backlog stays at zero. No secrets or environment variables are needed: every
+      # no-default config key gets a value from the test profiles.
+      - name: Check
+        run: ./gradlew check --no-daemon
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            build/reports/tests
+            build/reports/jacoco
+            build/reports/checkstyle
+            build/reports/spotbugs
+          retention-days: 14

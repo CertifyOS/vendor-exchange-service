@@ -13,33 +13,47 @@ repositories {
     mavenLocal()
 }
 
-group "com.certifyos.dal"
+group "com.certifyos.vendor_exchange"
 version = "1.0.0"
 buildDir = System.getProperty("custom.buildDir", "build")
 
 dependencies {
     implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
-     implementation enforcedPlatform("${quarkusPlatformGroupId}:quarkus-google-cloud-services-bom:${quarkusPlatformVersion}")
-    implementation 'io.quarkus:quarkus-arc'
-    implementation 'io.quarkus:quarkus-logging-json'
     implementation 'io.quarkus:quarkus-rest'
     implementation 'io.quarkus:quarkus-rest-jackson'
+    implementation 'io.quarkus:quarkus-rest-client-jackson'
+    // quarkus-oidc alone validates Auth0 tokens and provides the JsonWebToken CDI bean. No
+    // quarkus-smallrye-jwt beside it: two bearer mechanisms are ambiguous (file-ingestion, Task 2.3).
+    implementation 'io.quarkus:quarkus-oidc'
+    implementation 'io.quarkus:quarkus-security'
+    implementation 'io.quarkus:quarkus-mongodb-client'
+    implementation 'io.quarkus:quarkus-cache'
     implementation 'io.quarkus:quarkus-smallrye-health'
-    implementation 'io.smallrye.reactive:mutiny'
-
-    // GCP Services
-    implementation 'io.quarkiverse.googlecloudservices:quarkus-google-cloud-spanner'
-    implementation 'com.google.cloud:google-cloud-pubsub:1.132.3'
-
-    implementation 'org.jboss.logging:commons-logging-jboss-logging'
-    implementation 'org.jboss.logmanager:log4j-jboss-logmanager'
-    implementation 'org.jboss.logmanager:log4j2-jboss-logmanager'
-    implementation 'org.jboss.slf4j:slf4j-jboss-logmanager'
+    implementation 'io.quarkus:quarkus-smallrye-openapi'
+    implementation 'io.quarkus:quarkus-micrometer-registry-prometheus'
+    implementation 'io.quarkus:quarkus-opentelemetry'
+    implementation 'io.quarkus:quarkus-logging-json'
+    implementation 'io.quarkiverse.googlecloudservices:quarkus-google-cloud-secret-manager:2.15.0'
+    // 2.1.3 fails to augment on Quarkus 3.33.3 (file-ingestion finding 2); 2.3.4 works.
+    implementation 'io.quarkiverse.loggingsentry:quarkus-logging-sentry:2.3.4'
+    // No separate JobRunr MongoDB storage-provider artifact exists on Maven Central: quarkus-jobrunr
+    // uses the quarkus-mongodb-client bean above (file-ingestion finding 1).
+    implementation "org.jobrunr:quarkus-jobrunr:${jobrunrVersion}"
+    implementation 'com.google.cloud:google-cloud-storage:2.45.0'
+    implementation 'com.google.cloud:google-cloud-pubsub:1.134.0'
+    // UUIDv7 for event ids: JDK 21's java.util.UUID has no v7 factory (file-ingestion finding 66).
+    implementation 'com.fasterxml.uuid:java-uuid-generator:5.1.0'
 
     testImplementation 'io.quarkus:quarkus-jacoco'
-    testImplementation 'io.quarkus:quarkus-junit5'
-    testImplementation 'io.quarkus:quarkus-junit5-mockito'
+    // quarkus-junit5 / quarkus-junit5-mockito are relocation aliases since Quarkus 3.31; these are
+    // the real artifactIds.
+    testImplementation 'io.quarkus:quarkus-junit'
+    testImplementation 'io.quarkus:quarkus-junit-mockito'
+    testImplementation 'io.quarkus:quarkus-test-security-jwt'
     testImplementation 'io.rest-assured:rest-assured'
+    testImplementation 'org.testcontainers:mongodb:1.20.4'
+    testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
+    testImplementation 'org.awaitility:awaitility:4.2.2'
 }
 
 java {
@@ -61,26 +75,23 @@ configurations {
     integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
-
 sourceSets {
     integrationTest {
-        java.srcDir file('src/integration-test/java')
-        resources.srcDir file('src/integration-test/resources')
+        java.srcDir file('src/integrationTest/java')
+        resources.srcDir file('src/integrationTest/resources')
         compileClasspath += main.output + test.output
         runtimeClasspath += main.output + test.output
     }
 }
 
 checkstyle {
-    toolVersion = "10.21.0"
+    toolVersion = "${checkstyleVersion}"
     configFile = file('config/checkstyle/checkstyle.xml')
 }
-
 
 jacoco {
     toolVersion = '0.8.12'
 }
-
 
 spotbugs {
     ignoreFailures = false
@@ -90,7 +101,6 @@ spotbugs {
     maxHeapSize = '1g'
     excludeFilter = file("config/spotbugs/exclude.xml")
 }
-
 
 spotless {
     java {
@@ -111,11 +121,9 @@ clean {
     delete file("$buildDir/test-results/integrationTest")
 }
 
-
 checkstyleMain {
     dependsOn 'compileQuarkusGeneratedSourcesJava'
 }
-
 
 spotbugsMain {
     dependsOn 'compileQuarkusGeneratedSourcesJava'
@@ -150,7 +158,6 @@ jacocoTestReport {
     }
 }
 
-
 // integration test runner config, coverage and jacoco reporting
 task integrationTest(type: Test) {
     group = "verification"
@@ -159,14 +166,14 @@ task integrationTest(type: Test) {
     classpath = sourceSets.integrationTest.runtimeClasspath
     testClassesDirs = sourceSets.integrationTest.output.classesDirs
 
+    useJUnitPlatform()
+
     jacoco {
-        // excludeClassLoaders = ["*QuarkusClassLoader"]
         destinationFile = layout.buildDirectory.file("jacoco/integrationTest.exec").get().asFile
     }
 
     testLogging {
         events "passed", "skipped", "failed"
-        // showStandardStreams = true
     }
 
     finalizedBy 'jacocoIntegrationTestReport'
@@ -181,7 +188,7 @@ task jacocoIntegrationTestReport(type: JacocoReport) {
 
     executionData integrationTest
     sourceSets sourceSets.main
-    
+
     reports {
         csv.required = false
         html.required = true
@@ -194,7 +201,7 @@ task jacocoIntegrationTestReport(type: JacocoReport) {
 // unified all test runner
 task testAll {
     group = "verification"
-    description = "run all test types (excluding native)"
+    description = "run all test types"
     dependsOn test, integrationTest
     integrationTest.mustRunAfter test
 }

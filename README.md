@@ -1,62 +1,51 @@
-# quarkus-example
+# vendor-exchange-service
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Directory accuracy vendor exchange. Phase 1 (CP-39602) selects practitioners per tenant on a schedule, asks the egress service to build the vendor file, and records what was sent. Phase 2 (CP-40437) ingests the vendor's response in the same service.
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+Design: Confluence "CP-39602 - Design: Directory accuracy vendor export". Scaffolding plan: `cos-docs/directory-accuracy/vendor-export/scaffolding-implementation-plan.md`.
 
-## Running the application in dev mode
+## Shape
 
-You can run your application in dev mode that enables live coding using:
+- One image, two roles selected by Quarkus profile: `api` (HTTP, behind the load balancer) and `worker` (JobRunr server, no inbound traffic). `RoleProfileCheck` refuses to boot with neither or both.
+- Quarkus 3.33.3, JobRunr 8.8.2, MongoDB (database `vendor_exchange`), Java 21.
+- Same topology as `file-ingestion-service`; its `docs/decisions.md` is the reference for every platform lesson this repo inherits.
 
-```shell script
-./gradlew quarkusDev
+## Prerequisites
+
+- Java 21, Docker (Testcontainers and the image build).
+- For local runs, a MongoDB replica set: see `.env.example`.
+
+## First-time setup
+
+```shell
+make install-git-hooks
+cp .env.example .env
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+## Running locally
 
-## Packaging and running the application
-
-The application can be packaged using:
-
-```shell script
-./gradlew build
+```shell
+make dev-api      # QUARKUS_PROFILE=dev,api
+make dev-worker   # QUARKUS_PROFILE=dev,worker
 ```
 
-It produces the `quarkus-run.jar` file in the `build/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `build/quarkus-app/lib/` directory.
+## Checks
 
-The application is now runnable using `java -jar build/quarkus-app/quarkus-run.jar`.
-
-If you want to build an _über-jar_, execute the following command:
-
-```shell script
-./gradlew build -Dquarkus.package.jar.type=uber-jar
+```shell
+make compile      # compile every source set, run nothing
+make lint         # Spotless, Checkstyle, SpotBugs
+make check        # everything CI runs (unit + integration tests included)
 ```
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar build/*-runner.jar`.
+## Build
 
-## Creating a native executable
-
-You can create a native executable using:
-
-```shell script
-./gradlew build -Dquarkus.native.enabled=true
+```shell
+make build-image  # fast-jar + linux/amd64 image
 ```
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
+Deploy targets and `terraform/internal/` are added in Step 8 of the scaffolding plan.
 
-```shell script
-./gradlew build -Dquarkus.native.enabled=true -Dquarkus.native.container-build=true
-```
+## Documents
 
-You can then execute your native executable with: `./build/quarkus-example-1.0.0-SNAPSHOT-runner`
-
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/gradle-tooling>.
-
-## Provided Code
-
-### REST
-
-Easily start your REST Web Services
-
-[Related guide section...](https://quarkus.io/guides/getting-started-reactive#reactive-jax-rs-resources)
+- `docs/decisions.md`: every finding and deviation, in order.
+- `docs/runbook.md`: deploy order, hand grants, swap-in points (Step 9).

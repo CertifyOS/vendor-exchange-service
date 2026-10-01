@@ -392,7 +392,10 @@
             <property name="processJavadoc" value="true"/>
         </module>
         <module name="UpperEll"/> <!-- Java Style Guide: Numeric Literals -->
-        <module name="VisibilityModifier"/> <!-- Java Coding Guidelines: Minimize mutability -->
+        <module name="VisibilityModifier"> <!-- Java Coding Guidelines: Minimize mutability -->
+            <!-- Package-private @Inject fields are Quarkus's documented recommendation (private ones draw a warning). -->
+            <property name="ignoreAnnotationCanonicalNames" value="jakarta.inject.Inject, org.junit.Rule, org.junit.ClassRule, com.google.common.annotations.VisibleForTesting"/>
+        </module>
         <module name="WhitespaceAfter"/> <!-- Java Style Guide: Horizontal whitespace -->
         
 
@@ -405,9 +408,7 @@
         <module name="CyclomaticComplexity"> <!-- Java Coding Guidelines: Reduce Cyclomatic Complexity -->
             <property name="switchBlockAsSingleDecisionPoint" value="true"/>
         </module>
-        <module name="DesignForExtension"> <!-- Java Coding Guidelines: Design for extension -->
-            <property name="ignoredAnnotations" value="ParameterizedTest, Test, Before, BeforeEach, After, AfterEach, BeforeClass, BeforeAll, AfterClass, AfterAll"/>
-        </module>
+        <!-- DesignForExtension removed: CDI client proxies need overridable public methods on every bean (docs/decisions.md 3). -->
         <module name="JavadocMethod"> <!-- Java Style Guide: Where Javadoc is used -->
             <property name="accessModifiers" value="public"/>
             <property name="allowMissingParamTags" value="true"/>
