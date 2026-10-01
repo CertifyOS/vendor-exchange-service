@@ -22,8 +22,16 @@ public final class Documents {
      * @return the instant, or null when the field is absent
      */
     public static Instant instant(Document doc, String key) {
-        Date date = doc.getDate(key);
-        return date == null ? null : date.toInstant();
+        // A document read from MongoDB holds a Date (BSON date); one built in memory and not yet
+        // written still holds the Instant it was appended with. Both read back the same.
+        Object value = doc.get(key);
+        if (value instanceof Date date) {
+            return date.toInstant();
+        }
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        return null;
     }
 
     /**
