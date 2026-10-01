@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!--
+        We exclude EI_EXPOSE_REP2 warnings for our CDI beans because:
+        1. They are managed by the container
+        2. They are stateless by design
+        3. The dependencies are final and immutable
+        4. The implementations are using pure operations
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Or>
+            <Class name="com.certifyos.dal.user.service.UserService"/>
+            <Class name="com.certifyos.dal.user.resource.UserResource"/>
+        </Or>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Or>
+            <Class name="com.certifyos.dal.documentextracteddata.service.DocumentExtractedDataService"/>
+            <Class name="com.certifyos.dal.documentextracteddata.resource.DocumentExtractedDataResource"/>
+            <Class name="com.certifyos.dal.core_location.service.CoreLocationService"/>
+            <Class name="com.certifyos.dal.core_location.resource.CoreLocationResource"/>
+            <Class name="com.certifyos.dal.core_practitioner.service.CorePractitionerService"/>
+            <Class name="com.certifyos.dal.core_practitioner.resource.CorePractitionerResource"/>
+            <Class name="com.certifyos.dal.core_provider.service.CoreProviderService"/>
+            <Class name="com.certifyos.dal.core_provider.resource.CoreProviderResource"/>
+            <Class name="com.certifyos.dal.provider_flags.resource.ProviderFlagsResource"/>
+            <Class name="com.certifyos.dal.provider_flags.service.ProviderFlagsService"/>
+            <Class name="com.certifyos.dal.group.service.CoreGroupService"/>
+            <Class name="com.certifyos.dal.group.resource.CoreGroupResource"/>
+            <Class name="com.certifyos.dal.practice_location.resource.PracticeLocationResource"/>
+            <Class name="com.certifyos.dal.practice_location.service.PracticeLocationService"/>
+            <Class name="com.certifyos.dal.roster_template.resource.RosterTemplateResource"/>
+            <Class name="com.certifyos.dal.roster_template_column.resource.RosterTemplateColumnResource"/>
+            <Class name="com.certifyos.dal.tenant_group_location_participation.service.TenantGroupLocationParticipationService"/>
+            <Class name="com.certifyos.dal.tenant_group_location_participation.resource.TenantGroupLocationParticipationResource"/>
+            <Class name="com.certifyos.dal.location_entity_address.service.LocationEntityAddressService"/>
+            <Class name="com.certifyos.dal.location_entity_address.resource.LocationEntityAddressResource"/>
+            <Class name="com.certifyos.dal.group_entity_address.service.GroupEntityAddressService"/>
+            <Class name="com.certifyos.dal.group_entity_address.resource.GroupEntityAddressResource"/>
+            <Class name="com.certifyos.dal.core_entity_address.service.CoreEntityAddressService"/>
+            <Class name="com.certifyos.dal.core_entity_address.resource.CoreEntityAddressResource"/>
+            <Class name="com.certifyos.dal.jurisdictions.service.JurisdictionService"/>
+            <Class name="com.certifyos.dal.jurisdictions.resource.JurisdictionResource"/>
+            <Class name="com.certifyos.dal.contracts.service.ContractsService"/>
+            <Class name="com.certifyos.dal.contracts.resource.ContractsResource"/>
+            <Class name="com.certifyos.dal.group_location.service.GroupLocationService"/>
+            <Class name="com.certifyos.dal.group_location.resource.GroupLocationResource"/>
+            <Class name="com.certifyos.dal.tenant_group.service.TenantGroupService"/>
+            <Class name="com.certifyos.dal.tenant_group.resource.TenantGroupResource"/>
+            <Class name="com.certifyos.dal.contracted_network.service.ContractedNetworkService"/>
+            <Class name="com.certifyos.dal.contracted_network.resource.ContractedNetworkResource"/>
+            <Class name="com.certifyos.dal.tenant_group_location.service.TenantGroupLocationService"/>
+            <Class name="com.certifyos.dal.tenant_group_location.resource.TenantGroupLocationResource"/>
+            <Class name="com.certifyos.dal.hsd_specialty.resource.HsdSpecialtyResource"/>
+            <Class name="com.certifyos.dal.nucc_specialty.resource.NuccSpecialtyResource"/>
+            <Class name="com.certifyos.dal.abms_specialty.resource.AbmsSpecialtyResource"/>
+            <Class name="com.certifyos.dal.tenant_group_location_specialty.service.TenantGroupLocationSpecialtyService"/>
+            <Class name="com.certifyos.dal.tenant_group_location_specialty.resource.TenantGroupLocationSpecialtyResource"/>
+            <Class name="com.certifyos.dal.tenant_group_participation.service.TenantGroupParticipationService"/>
+            <Class name="com.certifyos.dal.tenant_group_participation.resource.TenantGroupParticipationResource"/>
+            <Class name="com.certifyos.dal.plan.service.PlanService"/>
+            <Class name="com.certifyos.dal.plan.resource.PlanResource"/>
+            <Class name="com.certifyos.dal.payer.service.PayerService"/>
+            <Class name="com.certifyos.dal.payer.resource.PayerResource"/>
+            <Class name="com.certifyos.dal.tenant_group_location_participation_specialty.service.TenantGroupLocationParticipationSpecialtyService"/>
+            <Class name="com.certifyos.dal.tenant_group_location_participation_specialty.resource.TenantGroupLocationParticipationSpecialtyResource"/>
+            <Class name="com.certifyos.dal.location_entity_contact.service.LocationEntityContactService"/>
+            <Class name="com.certifyos.dal.location_entity_contact.resource.LocationEntityContactResource"/>
+            <Class name="com.certifyos.dal.practitioner_entity_address.service.PractitionerEntityAddressService"/>
+            <Class name="com.certifyos.dal.practitioner_entity_address.resource.PractitionerEntityAddressResource"/>
+            <Class name="com.certifyos.dal.jurisdiction_plan.service.JurisdictionPlanService"/>
+            <Class name="com.certifyos.dal.jurisdiction_plan.resource.JurisdictionPlanResource"/>
+            <Class name="com.certifyos.dal.group_practitioner_location_participation.service.GroupPractitionerLocationParticipationService"/>
+            <Class name="com.certifyos.dal.group_practitioner_location_participation.resource.GroupPractitionerLocationParticipationResource"/>
+            <Class name="com.certifyos.dal.facility_entity_address.service.FacilityEntityAddressService"/>
+            <Class name="com.certifyos.dal.facility_entity_address.resource.FacilityEntityAddressResource"/>
+            <Class name="com.certifyos.dal.group_practitioner_location_specialty.service.GroupPractitionerLocationSpecialtyService"/>
+            <Class name="com.certifyos.dal.group_practitioner_location_specialty.resource.GroupPractitionerLocationSpecialtyResource"/>
+            <Class name="com.certifyos.dal.roster.service.RosterService"/>
+            <Class name="com.certifyos.dal.roster.resource.RosterResource"/>
+            <Class name="com.certifyos.dal.roster_record.service.RosterRecordService"/>
+            <Class name="com.certifyos.dal.roster_record.resource.RosterRecordResource"/>
+            <Class name="com.certifyos.dal.tenant.service.TenantService"/>
+            <Class name="com.certifyos.dal.tenant.resource.TenantResource"/>
+            <Class name="com.certifyos.dal.specialty.service.SpecialtyService"/>
+            <Class name="com.certifyos.dal.specialty.resource.SpecialtyResource"/>
+            <Class name="com.certifyos.dal.tenant_specialty.service.TenantSpecialtyService"/>
+            <Class name="com.certifyos.dal.tenant_specialty.resource.TenantSpecialtyResource"/>
+            <Class name="com.certifyos.dal.fs_user.resource.FSUserResource"/>
+            <Class name="com.certifyos.dal.fs_user.service.FSUserService"/>
+
+        </Or>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Or>
+        <Class name="com.certifyos.dal.provider_flags.repository.dto.SpannerProviderFlags"/>
+        <Class name="com.certifyos.dal.provider_flags.resource.dto.ProviderFlagsRequest"/>
+        <Class name="com.certifyos.dal.provider_flags.resource.dto.ProviderFlagsResponse"/>
+        <Class name="com.certifyos.dal.provider_flags.model.ProviderFlags"/>
+
+        </Or>
+    </Match>
+</FindBugsFilter>

@@ -1,0 +1,200 @@
+plugins {
+    id 'java'
+    id 'io.quarkus'
+    id 'checkstyle'
+    id 'com.diffplug.spotless' version("${spotlessVersion}")
+    id 'com.github.spotbugs' version("${spotbugsVersion}")
+    id 'jacoco'
+}
+
+repositories {
+    gradlePluginPortal()
+    mavenCentral()
+    mavenLocal()
+}
+
+group "com.certifyos.dal"
+version = "1.0.0"
+buildDir = System.getProperty("custom.buildDir", "build")
+
+dependencies {
+    implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
+     implementation enforcedPlatform("${quarkusPlatformGroupId}:quarkus-google-cloud-services-bom:${quarkusPlatformVersion}")
+    implementation 'io.quarkus:quarkus-arc'
+    implementation 'io.quarkus:quarkus-logging-json'
+    implementation 'io.quarkus:quarkus-rest'
+    implementation 'io.quarkus:quarkus-rest-jackson'
+    implementation 'io.quarkus:quarkus-smallrye-health'
+    implementation 'io.smallrye.reactive:mutiny'
+
+    // GCP Services
+    implementation 'io.quarkiverse.googlecloudservices:quarkus-google-cloud-spanner'
+    implementation 'com.google.cloud:google-cloud-pubsub:1.132.3'
+
+    implementation 'org.jboss.logging:commons-logging-jboss-logging'
+    implementation 'org.jboss.logmanager:log4j-jboss-logmanager'
+    implementation 'org.jboss.logmanager:log4j2-jboss-logmanager'
+    implementation 'org.jboss.slf4j:slf4j-jboss-logmanager'
+
+    testImplementation 'io.quarkus:quarkus-jacoco'
+    testImplementation 'io.quarkus:quarkus-junit5'
+    testImplementation 'io.quarkus:quarkus-junit5-mockito'
+    testImplementation 'io.rest-assured:rest-assured'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+compileJava {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-parameters'
+}
+
+compileTestJava {
+    options.encoding = 'UTF-8'
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+
+sourceSets {
+    integrationTest {
+        java.srcDir file('src/integration-test/java')
+        resources.srcDir file('src/integration-test/resources')
+        compileClasspath += main.output + test.output
+        runtimeClasspath += main.output + test.output
+    }
+}
+
+checkstyle {
+    toolVersion = "10.21.0"
+    configFile = file('config/checkstyle/checkstyle.xml')
+}
+
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+
+spotbugs {
+    ignoreFailures = false
+    showStackTraces = true
+    showProgress = true
+    reportsDir = file("$buildDir/reports/spotbugs")
+    maxHeapSize = '1g'
+    excludeFilter = file("config/spotbugs/exclude.xml")
+}
+
+
+spotless {
+    java {
+        importOrder()
+        removeUnusedImports()
+        toggleOffOn()
+        trimTrailingWhitespace()
+        endWithNewline()
+        palantirJavaFormat()
+        formatAnnotations()
+    }
+}
+
+clean {
+    delete sourceSets.integrationTest.output.classesDirs
+    delete sourceSets.integrationTest.output.resourcesDir
+    delete file("$buildDir/reports/tests/integrationTest")
+    delete file("$buildDir/test-results/integrationTest")
+}
+
+
+checkstyleMain {
+    dependsOn 'compileQuarkusGeneratedSourcesJava'
+}
+
+
+spotbugsMain {
+    dependsOn 'compileQuarkusGeneratedSourcesJava'
+}
+
+task installGitHooks(type: Copy) {
+    group = 'Setup'
+    description = 'Installs Git hooks from the githooks directory to .git/hooks'
+    from file('githooks')
+    into '.git/hooks'
+    fileMode = 0755
+}
+
+// unit test runner config, coverage and jacoco reporting
+test {
+    jacoco {
+        excludeClassLoaders = ["*QuarkusClassLoader"]
+        destinationFile = layout.buildDirectory.file("jacoco/jacoco.exec").get().asFile
+    }
+    finalizedBy 'jacocoTestReport'
+    systemProperty "java.util.logging.manager", "org.jboss.logmanager.LogManager"
+}
+
+jacocoTestReport {
+    dependsOn compileQuarkusGeneratedSourcesJava
+    reports {
+        csv.required = false
+        html.required = true
+        xml.required = true
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/test/html')
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/test/jacocoTestReports.xml')
+    }
+}
+
+
+// integration test runner config, coverage and jacoco reporting
+task integrationTest(type: Test) {
+    group = "verification"
+    description = "run integration tests"
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+
+    jacoco {
+        // excludeClassLoaders = ["*QuarkusClassLoader"]
+        destinationFile = layout.buildDirectory.file("jacoco/integrationTest.exec").get().asFile
+    }
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        // showStandardStreams = true
+    }
+
+    finalizedBy 'jacocoIntegrationTestReport'
+}
+
+check {
+    dependsOn integrationTest
+}
+
+task jacocoIntegrationTestReport(type: JacocoReport) {
+    dependsOn compileQuarkusGeneratedSourcesJava
+
+    executionData integrationTest
+    sourceSets sourceSets.main
+    
+    reports {
+        csv.required = false
+        html.required = true
+        xml.required = true
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/integrationTest/html')
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/integrationTest/jacocoIntegrationTestReports.xml')
+    }
+}
+
+// unified all test runner
+task testAll {
+    group = "verification"
+    description = "run all test types (excluding native)"
+    dependsOn test, integrationTest
+    integrationTest.mustRunAfter test
+}
