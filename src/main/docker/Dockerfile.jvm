@@ -4,8 +4,8 @@
 #   ./gradlew quarkusBuild
 #   docker build --platform linux/amd64 -f src/main/docker/Dockerfile.jvm -t <image> .
 #
-# JAVA_OPTS_APPEND set by the deployment (terraform/internal/compute.tf) replaces the value below,
-# so it repeats the two -D flags and adds the heap limit.
+# JAVA_OPTS_APPEND set by the deployment (Step 8, terraform/internal) replaces the value below, so it
+# repeats the two -D flags and adds the heap limit.
 FROM registry.access.redhat.com/ubi9/openjdk-21:1.21
 
 ENV LANGUAGE='en_US:en'

@@ -6,9 +6,14 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import java.time.Duration;
+import org.awaitility.Awaitility;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jobrunr.scheduling.JobScheduler;
+import org.jobrunr.server.BackgroundJobServer;
+import org.jobrunr.storage.StorageProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +28,12 @@ public class ApiRoleBootIT {
 
     @Inject
     JobScheduler scheduler;
+
+    @Inject
+    StorageProvider storage;
+
+    @Inject
+    Instance<BackgroundJobServer> backgroundJobServer;
 
     @Test
     void mappingIsResolvedFromTheProfile() {
@@ -43,13 +54,27 @@ public class ApiRoleBootIT {
     }
 
     @Test
-    void jobRunrServerIsOffAndRetriesFollowTheMapping() {
-        Assertions.assertFalse(
-                ConfigProvider.getConfig().getValue("quarkus.jobrunr.background-job-server.enabled", Boolean.class));
+    void retriesFollowTheMapping() {
         Assertions.assertEquals(
                 8,
                 ConfigProvider.getConfig().getValue("quarkus.jobrunr.jobs.default-number-of-retries", Integer.class));
         Assertions.assertNotNull(scheduler, "the scheduler bean exists on the api role so handlers can enqueue");
+    }
+
+    @Test
+    void jobRunrServerDoesNotRunOnTheApiRole() {
+        // Behavioural, not a config echo: the BackgroundJobServer bean exists on both roles (the
+        // extension decides start or no-start from the enabled flag at runtime), so the proof is that
+        // it is not running and never writes a heartbeat row, observed across more than one poll
+        // interval (5 s in the test profile). This JVM has its own Mongo container, so an empty
+        // server list cannot be another role's leftover.
+        if (backgroundJobServer.isResolvable()) {
+            Assertions.assertFalse(backgroundJobServer.get().isRunning(), "server must not run on api");
+        }
+        Awaitility.await()
+                .during(Duration.ofSeconds(7))
+                .atMost(Duration.ofSeconds(12))
+                .until(() -> storage.getBackgroundJobServers().isEmpty());
     }
 
     @Test

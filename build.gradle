@@ -41,6 +41,10 @@ dependencies {
     implementation "org.jobrunr:quarkus-jobrunr:${jobrunrVersion}"
     implementation 'com.google.cloud:google-cloud-storage:2.45.0'
     implementation 'com.google.cloud:google-cloud-pubsub:1.134.0'
+    // Declared, not left transitive: Step 5 imports com.google.auth.oauth2.TokenVerifier directly for
+    // the Pub/Sub push identity-token check. Gradle still resolves the highest version the Google
+    // clients above require.
+    implementation 'com.google.auth:google-auth-library-oauth2-http:1.30.0'
     // UUIDv7 for event ids: JDK 21's java.util.UUID has no v7 factory (file-ingestion finding 66).
     implementation 'com.fasterxml.uuid:java-uuid-generator:5.1.0'
 
