@@ -5,8 +5,8 @@ State of `vendor-exchange-service` at the end of the scaffolding subtask (CP-396
 ## Where things stand (2026-10-05)
 
 - Steps 0 to 7 of the scaffolding plan are built, tested in CI and recorded: repository and gates, configuration and profiles, persistence, audit trail, JobRunr wiring, inbound auth chain and HTTP skeleton, outbound identity and client interfaces, observability baseline. `docs/decisions.md` findings 1 to 63 hold the evidence for each gate.
-- Step 8 is built and planned, with the live apply pending the engineer: `terraform plan` is clean at 35 resources, the image is not yet pushed, the groups do not exist yet. `docs/runbook.md` section 2 is the exact order. Finding 67 is reserved for the live evidence.
-- Step 9 is this file, the README and the runbook. The Jira ticket's Implementation Details and points are written from the same text.
+- Step 8 is built and planned but held: the platform is moving to Pulumi, so `terraform/internal/` is not applied and no image is pushed (finding 67). The stack is the validated reference shape (`terraform plan` clean at 35 resources) for the Pulumi component, and the live observations in `docs/runbook.md` section 2 step 7 are that component's acceptance list.
+- Step 9 is done: this file, the README, the runbook, and the Jira ticket's Implementation Details and points (48).
 - Branch `feature/CP-39604-scaffolding-step-0`, pull request #1, every commit CI green. `main` is protected and still holds the template.
 - Tests: 92 unit, 75 integration, 0 failures. Every design index, every audit event type, every metric name, every endpoint and every client contract from the design exists in code.
 

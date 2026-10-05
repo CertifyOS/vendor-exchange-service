@@ -2,6 +2,8 @@
 
 Everything an operator or the next engineer needs to deploy, check and read this service. Commands run from the repository root unless noted. Project is always `certifyos-development`; the Terraform provider hardcodes it.
 
+**Status 2026-10-05:** the Terraform stack is validated and planned but held, pending the platform's move to Pulumi (decisions.md finding 67). Sections 2 and 3 describe the shape and order a Pulumi component must reproduce; do not run `terraform apply` from this repository without a fresh decision.
+
 ## 1. What runs where
 
 | Piece | Where | Notes |
