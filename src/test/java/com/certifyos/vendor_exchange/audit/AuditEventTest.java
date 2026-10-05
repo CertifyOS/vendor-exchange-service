@@ -28,6 +28,10 @@ class AuditEventTest {
                 .occurredAt(WHEN)
                 .detail("fileName", "org-xyz_org-xyz-candor-2026-10-001_20261001.csv")
                 .detail("rowCount", 1873)
+                .detail("deliveredAt", "2026-10-01T07:12:09Z")
+                .detail("bytes", 1912044)
+                .detail("completionSource", "EVENT")
+                .detail("md5", "x")
                 .detail("absent", null)
                 .build();
 
@@ -49,6 +53,7 @@ class AuditEventTest {
                 .actor("user:ops-1")
                 .occurredAt(WHEN)
                 .detail("reason", "hold")
+                .detail("disabledAt", "2026-10-01T00:00:00Z")
                 .build();
         Assertions.assertNull(schedule.exportBatchId());
         Assertions.assertFalse(schedule.toDocument().containsKey("exportBatchId"));
@@ -56,6 +61,9 @@ class AuditEventTest {
         AuditEvent tick = AuditEvent.of(AuditEventType.EXPORT_TICK_COMPLETED, null, null)
                 .occurredAt(WHEN)
                 .detail("schedulesDue", 0)
+                .detail("batchesCreated", java.util.List.of())
+                .detail("skippedAlreadyExists", 0)
+                .detail("durationMs", 1)
                 .build();
         Assertions.assertNull(tick.tenantId());
         Assertions.assertEquals(tick, AuditEvent.fromDocument(tick.toDocument()));
@@ -93,6 +101,11 @@ class AuditEventTest {
         detail.put("count", 1);
         AuditEvent event = AuditEvent.of(AuditEventType.SCHEDULE_CREATED, "org-xyz", "candor")
                 .details(detail)
+                .detail("cadence", "monthly")
+                .detail("timezone", "UTC")
+                .detail("selection", "s")
+                .detail("egressTemplateId", "tpl")
+                .detail("nextDueAt", "n")
                 .build();
         detail.put("count", 2);
         Assertions.assertEquals(1, event.detail().get("count"));

@@ -89,32 +89,22 @@ public class FinishJob implements JobRequestHandler<FinishJobRequest> {
         }
         VendorBucket.ObjectInfo info = object.get();
         long registered = npis.countForBatch(batch.id());
-        long inFile = metadataCount(info, META_TOTAL_RECORDS);
-        Long rowCount = info.metadata().containsKey(META_TOTAL_ROWS) ? metadataCount(info, META_TOTAL_ROWS) : null;
+        Long records = info.metadataNumber(META_TOTAL_RECORDS);
+        long inFile = records == null ? 0 : records;
+        Long rowCount = info.metadataNumber(META_TOTAL_ROWS);
         Reconciliation reconciliation = Reconciliation.of(registered, inFile, now);
         FileDetails file = new FileDetails(
                 batch.file() == null ? null : batch.file().name(),
                 batch.file() == null ? null : batch.file().path(),
                 rowCount,
                 info.size(),
-                TemplateProvisioner.SCHEMA_VERSION);
+                TemplateProvisioner.SCHEMA_VERSION,
+                info.md5());
         if (!info.isComplete()) {
             LOG.warnf(
                     "%s: object %s is not marked complete; delivering on egress's completion signal",
                     batch.id(), info.objectName());
         }
         completion.delivered(batch, file, reconciliation, info.producedBy(), now);
-    }
-
-    private static long metadataCount(VendorBucket.ObjectInfo info, String key) {
-        String value = info.metadata().get(key);
-        if (value == null) {
-            return 0;
-        }
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException notANumber) {
-            return 0;
-        }
     }
 }

@@ -299,7 +299,8 @@ class RequestEgressJobIT {
                         "test-vendor-bucket",
                         prior.destination().objectName(),
                         4096,
-                        Map.of("complete", "true", "correlationId", batchId + "-r1"))));
+                        Map.of("complete", "true", "correlationId", batchId + "-r1"),
+                        "md5-" + "x")));
 
         job.run(new RequestEgressJobRequest(batch.id(), 2));
 

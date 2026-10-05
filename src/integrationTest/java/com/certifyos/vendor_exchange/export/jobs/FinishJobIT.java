@@ -77,7 +77,8 @@ class FinishJobIT {
                         batch.egress().destination().bucket(),
                         batch.egress().destination().objectName(),
                         size,
-                        metadata)));
+                        metadata,
+                        "1B2M2Y8AsgTpgAmY7PhCfg==")));
     }
 
     @Test
@@ -110,6 +111,8 @@ class FinishJobIT {
         Assertions.assertEquals(5L, after.file().rowCount());
         Assertions.assertEquals(2048L, after.file().bytes());
         Assertions.assertEquals("certify-export-v1", after.file().schemaVersion());
+        Assertions.assertEquals(
+                "1B2M2Y8AsgTpgAmY7PhCfg==", after.file().md5(), "the object's MD5 as the bucket reports it");
         Assertions.assertEquals(batch.egress().correlationId(), after.egress().fileProducedBy());
         var trail = audit.findForBatch(batch.id(), 20);
         AuditEvent reconciled = trail.stream()
@@ -122,6 +125,7 @@ class FinishJobIT {
                 .findFirst()
                 .orElseThrow();
         Assertions.assertEquals(batch.file().name(), delivered.detail().get("fileName"));
+        Assertions.assertEquals("1B2M2Y8AsgTpgAmY7PhCfg==", delivered.detail().get("md5"));
         Assertions.assertEquals("EVENT", delivered.detail().get("completionSource"));
         Assertions.assertEquals(StateName.DELETED, storage.getJobById(deadline).getState(), "pending deadline deleted");
     }

@@ -22,12 +22,13 @@ public class GcsVendorBucket implements VendorBucket {
         Blob blob = storage()
                 .get(
                         BlobId.of(bucket, objectName),
-                        Storage.BlobGetOption.fields(Storage.BlobField.METADATA, Storage.BlobField.SIZE));
+                        Storage.BlobGetOption.fields(
+                                Storage.BlobField.METADATA, Storage.BlobField.SIZE, Storage.BlobField.MD5HASH));
         if (blob == null) {
             return Optional.empty();
         }
-        return Optional.of(
-                new ObjectInfo(bucket, objectName, blob.getSize() == null ? 0 : blob.getSize(), blob.getMetadata()));
+        return Optional.of(new ObjectInfo(
+                bucket, objectName, blob.getSize() == null ? 0 : blob.getSize(), blob.getMetadata(), blob.getMd5()));
     }
 
     private Storage storage() {

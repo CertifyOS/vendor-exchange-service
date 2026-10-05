@@ -22,10 +22,29 @@ public interface VendorBucket {
      * @param objectName the object name
      * @param size bytes
      * @param metadata user metadata, never null
+     * @param md5 the object's MD5 as the bucket reports it (base64), or null
      */
-    record ObjectInfo(String bucket, String objectName, long size, Map<String, String> metadata) {
+    record ObjectInfo(String bucket, String objectName, long size, Map<String, String> metadata, String md5) {
         public ObjectInfo {
             metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        }
+
+        /**
+         * A numeric metadata value.
+         *
+         * @param key the metadata key
+         * @return the number, or null when absent or not a number
+         */
+        public Long metadataNumber(String key) {
+            String value = metadata.get(key);
+            if (value == null) {
+                return null;
+            }
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException notANumber) {
+                return null;
+            }
         }
 
         /** Whether egress marked the object complete. */

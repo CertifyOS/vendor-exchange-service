@@ -34,6 +34,9 @@ public class ReconcilerJob {
     /** Every hour on the hour. */
     public static final String CRON = "0 * * * *";
 
+    /** The warning line's prefix; the deployment's alert E2 counts these lines. */
+    public static final String REENQUEUED_PREFIX = "EXPORT_RECONCILER_REENQUEUED";
+
     /** The most stale rows one run looks at. */
     static final int STALE_LIMIT = 500;
 
@@ -83,8 +86,8 @@ public class ReconcilerJob {
         for (ExportBatch batch : stale) {
             Reenqueued entry = reenqueue(batch);
             LOG.warnf(
-                    "EXPORT_RECONCILER_REENQUEUED batch=%s state=%s since=%s job=%s jobId=%s",
-                    batch.id(), batch.state(), batch.updatedAt(), entry.job(), entry.jobId());
+                    "%s batch=%s state=%s since=%s job=%s jobId=%s",
+                    REENQUEUED_PREFIX, batch.id(), batch.state(), batch.updatedAt(), entry.job(), entry.jobId());
             reenqueued.add(entry);
         }
         return reenqueued;
