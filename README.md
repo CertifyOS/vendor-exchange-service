@@ -12,15 +12,19 @@ Directory accuracy vendor exchange. Phase 1 selects practitioners per tenant on 
 One image, two roles chosen by Quarkus profile. `prod,api` serves HTTP behind the load balancer: operator endpoints under `/v1/vendor-exports`, the Pub/Sub push endpoint under `/internal`, health and metrics under `/q`. `prod,worker` runs the JobRunr job server and dashboard and takes no inbound traffic. Both roles share one MongoDB database, `vendor_exchange`, which holds the four service collections and JobRunr's five `jobrunr_` collections.
 
 ```
-export lane        tick (06:00 UTC) -> SelectJob -> RequestEgressJob -> completion event or DeadlineCheckJob -> FinishJob
+export lane        tick (06:00 UTC) or run-now -> SelectJob -> RequestEgressJob -> completion event or DeadlineCheckJob -> FinishJob
+batch states       SCHEDULED -> NPIS_SELECTED -> EGRESS_REQUESTED -> EGRESS_COMPLETED -> DELIVERED   (EMPTY, FAILED, SUPERSEDED)
 foundations        config  persistence  audit  auth  http  clients  metrics
 ```
+
+Operators work through `/v1/vendor-exports`: schedules (create, enable, disable, preview, run-now), batches (read, list, NPIs, retry, supersede) and the tick. The procedures are in `docs/runbook.md` section 7; the contract is `openapi/openapi.yaml`.
 
 ## Prerequisites
 
 - Java 21. Gradle comes with the wrapper.
 - Docker, for the integration tests (Testcontainers MongoDB replica set) and the image build.
 - For local runs: a MongoDB replica set and the values marked required in `.env.example`.
+- For the integration tests: nothing beyond Docker; WireMock stands in for the DAL, api-layer and egress, and the vendor bucket is mocked.
 - For deploys: `gcloud` authenticated to `certifyos-development`, Terraform 1.9 or newer.
 
 ## First run
@@ -74,10 +78,16 @@ src/main/java/com/certifyos/vendor_exchange/
   persistence/  Collections, Transactions, Documents, Ids, AlreadyExistsException
   audit/        AuditEvent, AuditEventType (24 types), AuditRepository, Actors
   auth/         UserContextFilter, PermissionFilter, DalUserClient, Google ID tokens, push token verifier
-  http/         Problem (RFC 9457), Problems, ProblemMappers
-  clients/      EgressClient, ApiLayerClient, ApiLayerTokenService, readiness
+  http/         Problem (RFC 9457), Problems, ProblemException, ProblemMappers
+  clients/      EgressClient, ApiLayerClient, ApiLayerTokenService, VendorBucket (GCS metadata), readiness
   metrics/      VendorExchangeMetrics (the design's names)
-  export/       schedule/ batch/ jobs/ events/ api/ and ExportStateGauges
+  export/
+    schedule/   ScheduleResource and ScheduleService, SelectionSchema, Cadence, TemplateProvisioner (+ the mappings CSV)
+    batch/      ExportBatch and ExportNpi with their repositories, BatchLifecycle (birth, selection, request),
+                BatchCompletion (completed, failed, delivered), BatchOperations (retry, supersede), DestinationNames
+    jobs/       TickJob, SelectJob, RequestEgressJob, DeadlineCheckJob, FinishJob, ReconcilerJob, JobEnqueuer, JobIds
+    events/     EgressEventResource -> EgressEventHandler (the design's handler table)
+    api/        VendorExportsResource (batches), ExportOpsResource (tick), BatchViews
 terraform/internal/   the internal environment
 scripts/smoke-api.sh  live smoke test
 openapi/openapi.yaml  the committed contract

@@ -2,7 +2,7 @@
 
 Everything an operator or the next engineer needs to deploy, check and read this service. Commands run from the repository root unless noted. Project is always `certifyos-development`; the Terraform provider hardcodes it.
 
-**Status 2026-10-05:** the Terraform stack is validated and planned but held, pending the platform's move to Pulumi (decisions.md finding 67). Sections 2 and 3 describe the shape and order a Pulumi component must reproduce; do not run `terraform apply` from this repository without a fresh decision.
+**Status 2026-10-06:** the export lane is complete and proven in CI end to end (decisions.md findings 69 to 89). The Terraform stack is validated and planned but held, pending the platform's move to Pulumi (finding 67). Sections 2 and 3 describe the shape and order a Pulumi component must reproduce; do not run `terraform apply` from this repository without a fresh decision. Section 9 is the first thing to run once the deployment and the egress changes exist.
 
 ## 1. What runs where
 
@@ -54,7 +54,8 @@ Every external dependency has an interim that works today and a swap-in that is 
 - [ ] **Auth0 machine client for api-layer** (A1). Interim: `ApiLayerTokenService` reports not configured; `/q/health/ready` lists `api-layer` DOWN. Swap-in: `gcloud secrets versions add vendor-exchange-apilayer-client-secret --data-file=-`, set `api_layer_client_id` in `variables.tf` (or a tfvars), `make create-template`, rollouts.
 - [ ] **IAP access to the DAL and api-layer** (A2). Interim: operator calls answer `503 DAL_UNAVAILABLE`; the smoke script labels it "grant pending". Swap-in: none in code; the same deployment starts passing once `roles/iap.httpsResourceAccessor` is granted on `dal-service-internal` and `api-service-internal` to both VM accounts.
 - [ ] **Service account and Pub/Sub bindings** (A3). Listed in `terraform/internal/iam.tf`. Needed before the first push delivery and for dead lettering.
-- [ ] **Vendor bucket read** (A4). Bucket `certifyos-development-sftp-candor-health` exists; `vendor-exchange-worker@` needs `storage.objects.get` under `from/`. Needed by `FinishJob` (export lane).
+- [ ] **Vendor bucket read** (A4). Bucket `certifyos-development-sftp-candor-health` exists; `vendor-exchange-worker@` needs `storage.objects.get` under `from/`. `FinishJob` reads object metadata there (never the file) and `RequestEgressJob` reads it when a prior attempt's cancel is refused.
+- [ ] **Egress changes** (the design's Rollout asks: `npiFilter` above 100, `destination` on the request with the create-only copy, `correlationId` and counts in the object metadata, no manifest beside the file, the completion topic). Interim: the whole lane is proven against WireMock egress and a mocked bucket (`ExportLaneIT`). Swap-in: none in code; section 9 is the live verification once they land.
 - [ ] **DNS** (A5). `vendor-exchange.internal.certifyos.com A <lb_ip output>` in Route 53. Until then the managed certificate stays `PROVISIONING` and the smoke script uses `LB_IP=`.
 - [ ] **Dedicated Atlas user** (A6). Swap-in: a new version of `vendor-exchange-mongodb-uri`, then `make rollout-api` and `make rollout-worker`.
 - [ ] **Egress completion topic** (A7). Swap-in: set `egress_events_topic` to the topic name and `make tf-apply`. This creates the push subscription and sets the two push settings on the api group, which opens `/internal/vendor-exports/egress-events` to verified tokens from `vendor-exchange-pubsub-push@`.
@@ -101,9 +102,77 @@ db.jobrunr_background_job_servers.find({}, { firstHeartbeat: 1, lastHeartbeat: 1
 db.jobrunr_recurring_jobs.find({}, { _id: 1, scheduleExpression: 1, zoneId: 1 })
 ```
 
-**Operator calls.** All under `/v1/vendor-exports`, platform token plus `tenant-id` header. `GET /schedules` and `GET /` list (empty until the export lane fills them); `POST /tick` runs the daily tick inline and returns its counts. Errors are `application/problem+json` with a stable `code`: `TENANT_REQUIRED`, `TENANT_UNRESOLVED`, `TENANT_FORBIDDEN`, `PERMISSION_DENIED`, `DAL_UNAVAILABLE`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL`; on the push endpoint `PUSH_NOT_CONFIGURED`, `PUSH_TOKEN_REQUIRED`, `PUSH_TOKEN_REJECTED`.
+**Operator calls.** All under `/v1/vendor-exports`, platform token plus `tenant-id` header; section 7 has the procedures. Errors are `application/problem+json` with a stable `code`; the codes each endpoint can answer are listed on it in `openapi/openapi.yaml`.
 
-## 7. When something is wrong
+## 7. Operator procedures
+
+Every call needs a platform access token and the `tenant-id` header; the path tenant must be that tenant. Writes need `vendor-export:manage`, reads `vendor-export:read` (once A8 is on). Set `BASE=https://vendor-exchange.internal.certifyos.com` and `H=(-H "Authorization: Bearer $TOKEN" -H "tenant-id: $TENANT" -H "Content-Type: application/json")`.
+
+**Enable a tenant for the vendor.** Create the schedule; creation provisions the tenant's egress template through api-layer (found by name `vendor-exchange candor certify-export-v1`, created from this repository's mappings CSV when absent) and enables the schedule.
+
+```shell
+curl "${H[@]}" -X PUT "$BASE/v1/vendor-exports/schedules/$TENANT/candor" -d '{
+  "cadence": { "type": "monthly", "dayOfMonth": 1 },
+  "timezone": "America/New_York",
+  "selection": { "data.delegationStatus": { "in": ["Direct", "Delegated"] }, "credentialingStatus": { "eq": "Approved" } }
+}'
+```
+
+201 with the schedule, its `egressTemplateId` and `nextDueAt` (local midnight on the day, never in the past). 409 `SCHEDULE_EXISTS` if one exists: `GET` it and send the body again with its `version` to replace it (200). Selection fields and operators are the design's table (`SELECTION_INVALID` lists every problem); cadence or timezone changes recompute `nextDueAt`, selection or template changes do not.
+
+**Preview what the selection matches today** (no write, api-layer count with page size 1):
+
+```shell
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/schedules/$TENANT/candor/preview" -d '{}'                      # the stored selection
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/schedules/$TENANT/candor/preview" -d '{"selection":{"credentialingStatus":{"eq":"Approved"}}}'
+```
+
+**Run now** (how a pilot's first export starts; the next tick is unaffected because `nextDueAt` advances as the tick would):
+
+```shell
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/schedules/$TENANT/candor/run-now"
+```
+
+201 `{exportBatchId, jobId, nextDueAt}`. 409 `BATCH_EXISTS` when the current period already has its batch (supersede it instead), `SCHEDULE_DISABLED` when the schedule is disabled.
+
+**Disable and enable** (reason mandatory; `catchUp` runs the one period missed while disabled, else the next future one):
+
+```shell
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/schedules/$TENANT/candor/disable" -d '{"reason":"vendor outage"}'
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/schedules/$TENANT/candor/enable"  -d '{"reason":"vendor back","catchUp":true}'
+```
+
+**Read a batch.** The id is `<tenantId>-candor-<yyyy-MM>-<seq>`.
+
+```shell
+curl "${H[@]}" "$BASE/v1/vendor-exports?period=2026-10"             # the tenant's batches, newest first
+curl "${H[@]}" "$BASE/v1/vendor-exports/$TENANT-candor-2026-10-001"
+curl "${H[@]}" "$BASE/v1/vendor-exports/$TENANT-candor-2026-10-001/npis?limit=500"   # pass nextAfter back as after
+```
+
+What to expect in the document: `state` on the main path `SCHEDULED`, `NPIS_SELECTED`, `EGRESS_REQUESTED`, `EGRESS_COMPLETED`, `DELIVERED`; `selection.practitionersSelected` after selection; `egress.correlationId` (`<batchId>-r<attempt>`), `egress.destination`, `egress.requestedAt` after the request; `egress.completionSource` `EVENT`, `DEADLINE` or `PRIOR_ATTEMPT` and `egress.fileProducedBy` after completion; `file` (name, path, rowCount, bytes, `schemaVersion`), `reconciliation` (`registered`, `inFile`, `match`) and `deliveredAt` once delivered. `EMPTY` means the selection matched nobody; no file is produced for the period.
+
+**Retry a failed batch** (from `FAILED` only; `failedStep` says where it goes back to):
+
+```shell
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/$TENANT-candor-2026-10-001/retry" -d '{"reason":"egress fixed"}'
+```
+
+202 `{exportBatchId, attempt, jobId}`. `SELECT` restarts the selection from the saved page; `EGRESS` cancels the prior attempt's egress job, reuses the pinned template and the registered NPIs, and asks egress again under `-r<attempt>`. If the prior attempt had in fact placed the file, the retry finds it and finishes without a new request (`completionSource = PRIOR_ATTEMPT`).
+
+**Supersede a delivered batch** (the file turned out wrong; from `DELIVERED` only):
+
+```shell
+curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/$TENANT-candor-2026-10-001/supersede" -d '{"reason":"wrong template version"}'
+```
+
+201 `{exportBatchId, jobId}`: a new batch at `seq + 1` with the schedule's current selection; the old batch is `SUPERSEDED` and its file stays in the vendor folder (the vendor may have read it). The schedule's `lastBatchId` moves to the new batch; `nextDueAt` does not.
+
+**Run the tick by hand** (same code as the 06:00 UTC job, answers its counts): `curl "${H[@]}" -X POST "$BASE/v1/vendor-exports/tick"`.
+
+**Problem codes an operator sees.** 400 `SELECTION_INVALID`, `CADENCE_INVALID`, `TIMEZONE_INVALID`, `PERIOD_INVALID`, `REASON_REQUIRED`, `TEMPLATE_NOT_FOUND`, `INVALID_REQUEST`; 403 `TENANT_MISMATCH` (path tenant is not the header tenant); 404 `SCHEDULE_NOT_FOUND`, `BATCH_NOT_FOUND` (also for another tenant's batch); 409 `SCHEDULE_EXISTS`, `VERSION_STALE`, `ALREADY_ENABLED`, `ALREADY_DISABLED`, `SCHEDULE_DISABLED`, `BATCH_EXISTS`, `TEMPLATE_AMBIGUOUS`, `RETRY_NOT_ALLOWED`, `SUPERSEDE_NOT_ALLOWED`; 503 `API_LAYER_NOT_CONFIGURED`, `API_LAYER_UNAVAILABLE`, `DAL_UNAVAILABLE`.
+
+## 8. When something is wrong
 
 | Symptom | Where to look | Likely cause |
 | --- | --- | --- |
@@ -111,5 +180,28 @@ db.jobrunr_recurring_jobs.find({}, { _id: 1, scheduleExpression: 1, zoneId: 1 })
 | 503 `DAL_UNAVAILABLE` on every operator call | VM logs, `DAL user lookup failed` warn line | IAP grant pending (A2) or DAL down |
 | ready lists Mongo DOWN | Atlas access list, VPC | VM not in `default` subnet range 10.128.0.0/9 |
 | no `EXPORT_TICK_COMPLETED` by 06:30 UTC | `jobrunr_background_job_servers` heartbeat, worker VM | worker down across the tick; alert E1; the next tick catches up |
-| batch stuck non-terminal | `vendor_export_events` for the batch, `jobrunr_jobs` by name | reconciler re-enqueues after `RECONCILER_STALE_MINUTES`; alert E2 |
+| batch stuck non-terminal | `vendor_export_events` for the batch, `jobrunr_jobs` by name | reconciler re-enqueues after `RECONCILER_STALE_MINUTES` and logs `EXPORT_RECONCILER_REENQUEUED`; alert E2 |
+| batch `FAILED`, `failedStep SELECT` | `lastError`; `EXPORT_BATCH_FAILED` detail `cause JOB_RETRIES_EXHAUSTED` | api-layer unreachable or unconfigured through all retries; fix, then retry (section 7) |
+| batch `FAILED`, `failedStep EGRESS` | `EXPORT_BATCH_FAILED` detail `cause`: `EGRESS_FAILED` (egress said so), `EGRESS_DID_NOT_FINISH` (48 h, cancelled), `FILE_NOT_FOUND` (completed but no object), `JOB_RETRIES_EXHAUSTED` (request never accepted) | ask egress, then retry; the registered NPIs are reused |
+| `DELIVERED` with `reconciliation.match false` | `NPIS_RECONCILED` detail, `GET .../npis` against the file | egress dropped or duplicated rows; alert E6; supersede after the fix |
+| `EXPORT_EGRESS_STALE` events | egress job status for the correlation id | egress slow; check 2 at request + 48 h fails the batch if still running |
+| `EXPORT_EVENT_REJECTED` events | detail `reason` `UNPARSEABLE`, `UNKNOWN_SCHEMA`, `TENANT_MISMATCH` | egress changed the event schema, or a subscription filter is wrong; alert E5 |
 | push endpoint 401 | `PUSH_*` code in the problem body | not configured (A7 pending), wrong audience, token not from the push account |
+
+## 9. First live verification
+
+Run this once, in order, as soon as the Pulumi deployment exists and the egress changes have landed. It is the first real traffic the lane sees; `ExportLaneIT` has proven the same sequence against WireMock. Use a pilot tenant the vendor contract names; `TENANT`, `TOKEN`, `BASE` and `H` as in section 7.
+
+1. Readiness lists `api-layer` UP (A1 and A2 landed): `curl -s "$BASE/q/health/ready" | jq .checks`.
+2. Create the schedule disabled-safe: `PUT` as in section 7, then `POST .../disable -d '{"reason":"pilot: run by hand first"}'`. Confirm in api-layer that the template `vendor-exchange candor certify-export-v1` exists for the tenant and its mappings CSV is this repository's `certify-export-v1.mappings.csv` (the first live create is the gate for the attribute keys, finding 69).
+3. Preview: `POST .../preview -d '{}'`. The count must be the one the vendor expects for the pilot; adjust the selection with `PUT` and the `version` until it is.
+4. Enable and run: `POST .../enable -d '{"reason":"pilot","catchUp":false}'`, then `POST .../run-now`. Keep the `exportBatchId`.
+5. Watch the batch reach `EGRESS_REQUESTED` within a minute (`GET .../$ID` or the JobRunr dashboard through `make tunnel-dashboard`). Check the egress job in its Activity Center under the correlation id `$ID-r1`.
+6. Watch for `EGRESS_COMPLETED` by the event (`completionSource EVENT`) and then `DELIVERED`. If the event does not arrive within six hours the deadline check completes it (`DEADLINE`) and `EXPORT_EVENT_MISSED` is written: that is the push subscription (A7) to fix, not the batch.
+7. Verify the object and its metadata, which is what `FinishJob` read:
+   ```shell
+   gcloud storage objects describe "gs://certifyos-development-sftp-candor-health/from/$TENANT/${TENANT}_${ID}_$(date -u +%Y%m%d).csv"      --project certifyos-development --format='value(size,metadata)'
+   ```
+   `metadata.complete=true`, `metadata.correlationId=$ID-r1`, `metadata.totalRecords` equal to `reconciliation.registered` in the batch, and no `.manifest.json` beside the file.
+8. Read the audit trail and compare with finding 89's first sequence: in `mongosh`, `db.vendor_export_events.find({ exportBatchId: "$ID" }).sort({ _id: 1 }).map(e => e.type)`.
+9. Record the outcome as the next numbered finding in `docs/decisions.md`, with the batch id, the object path and the trail; tick the boxes in section 4 that the run proved.
