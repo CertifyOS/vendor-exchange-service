@@ -2,9 +2,11 @@ package com.certifyos.vendor_exchange.export.api;
 
 import com.certifyos.vendor_exchange.ApiTestProfile;
 import com.certifyos.vendor_exchange.MongoResource;
+import com.certifyos.vendor_exchange.auth.GoogleIdTokenService;
 import com.certifyos.vendor_exchange.auth.UserContextFilter;
 import com.certifyos.vendor_exchange.auth.WireMockDal;
 import com.certifyos.vendor_exchange.http.Problem;
+import io.quarkus.test.InjectMock;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
@@ -16,6 +18,7 @@ import io.restassured.specification.RequestSpecification;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 @QuarkusTest
 @QuarkusTestResource(MongoResource.class)
@@ -25,8 +28,12 @@ class VendorExportsResourceIT {
 
     static final String EMAIL = UserContextFilter.EMAIL_CLAIM;
 
+    @InjectMock
+    GoogleIdTokenService tokens;
+
     @BeforeEach
     void before() {
+        Mockito.when(tokens.idToken("test-dal-iap-client-id")).thenReturn("dal-id-token");
         WireMockDal.stubMember("ops@certifyos.com", "org-ops");
     }
 

@@ -5,17 +5,19 @@ import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import org.eclipse.microprofile.rest.client.annotation.ClientHeaderParam;
+import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
 /**
  * The DAL user lookup. The DAL's global header interceptor refuses any request that lacks {@code
  * requesting-user-id} or {@code requesting-organization-id} with a 404 "Missing Headers" and only
  * checks presence, so this client sends the service name as the user (there is no user yet; this
- * call is how one is found) and the caller's tenant as the organisation, as api-layer does. The
- * Google ID token for IAP is added by the outbound identity filter when it lands; until then the
- * call is refused by IAP and the operator sees {@code 503 DAL_UNAVAILABLE}.
+ * call is how one is found) and the caller's tenant as the organisation, as api-layer does. {@link
+ * DalAuthFilter} adds the Google ID token IAP checks; until the IAP grant for this service's
+ * account exists, IAP refuses the call and the operator sees {@code 503 DAL_UNAVAILABLE}.
  */
 @RegisterRestClient(configKey = "dal")
+@RegisterProvider(DalAuthFilter.class)
 @ClientHeaderParam(name = "requesting-user-id", value = DalUserClient.REQUESTING_USER_ID)
 public interface DalUserClient {
 

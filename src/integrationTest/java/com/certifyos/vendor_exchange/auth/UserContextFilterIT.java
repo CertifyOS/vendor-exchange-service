@@ -5,6 +5,7 @@ import com.certifyos.vendor_exchange.MongoResource;
 import com.certifyos.vendor_exchange.http.Problem;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
+import io.quarkus.test.InjectMock;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
@@ -16,6 +17,7 @@ import io.restassured.specification.RequestSpecification;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * The tenant-membership chain against a WireMock DAL. The HTTP-layer policy (a platform token for
@@ -30,8 +32,13 @@ class UserContextFilterIT {
 
     static final String EMAIL = UserContextFilter.EMAIL_CLAIM;
 
+    // The real token service would reach for Application Default Credentials, which CI does not have.
+    @InjectMock
+    GoogleIdTokenService tokens;
+
     @BeforeEach
     void before() {
+        Mockito.when(tokens.idToken("test-dal-iap-client-id")).thenReturn("dal-id-token");
         WireMockDal.stubMember("dev@certifyos.com", "org-a");
         WireMockDal.stubFor(WireMock.get(WireMock.urlPathEqualTo("/users/by-email"))
                 .withQueryParam("email", WireMock.equalTo("ghost@certifyos.com"))
@@ -125,6 +132,7 @@ class UserContextFilterIT {
                 WireMock.getRequestedFor(WireMock.urlPathEqualTo("/users/by-email"))
                         .withQueryParam("email", WireMock.equalTo("hdr@certifyos.com"))
                         .withQueryParam("includePermissions", WireMock.equalTo("true"))
+                        .withHeader("Authorization", WireMock.equalTo("Bearer dal-id-token"))
                         .withHeader("requesting-user-id", WireMock.equalTo("vendor-exchange-service"))
                         .withHeader("requesting-organization-id", WireMock.equalTo("org-h")));
     }

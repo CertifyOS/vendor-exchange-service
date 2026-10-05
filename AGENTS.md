@@ -36,6 +36,7 @@ The one guidance file for coding agents and people. Other tool files point here.
 - Every repository method takes the tenant or an id that embeds it; every list query carries a limit.
 - Logs carry ids and counts, never bodies, DTOs, bound values or PII.
 - Error responses are RFC 9457 problem+json with a stable `code` (`http/Problem`), rendered only by `http/ProblemMappers` and the auth filters' aborts through `http/Problems`. Resources throw; nothing builds an error body by hand.
+- Outbound identity: `auth/GoogleIdTokenService` mints one Google ID token per IAP audience (`DalAuthFilter`, `clients/EgressAuthFilter`); `clients/ApiLayerTokenService` holds the Auth0 machine token (`ApiLayerAuthFilter`) and reports "not configured" on readiness until the client exists. REST client interfaces in `clients/` carry typed records only; the tenant header is a method parameter, never ambient state.
 - Inbound auth: the HTTP policy requires a platform token on `/v1/*`; `auth/UserContextFilter` requires `tenant-id` and a role in that tenant (DAL lookup, cached by email); `auth/PermissionFilter` checks `@RequiresPermission` only when `vendor-exchange.permissions.enforce` is true. `/internal/*` is guarded by `auth/PubSubPushAuthFilter` (Google OIDC push token), closed with 401 until the push settings exist.
 
 ## Working
