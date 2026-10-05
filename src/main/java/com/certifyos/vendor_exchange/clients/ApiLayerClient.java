@@ -23,6 +23,7 @@ import org.jboss.resteasy.reactive.RestForm;
  * is the export lane's.
  */
 @RegisterRestClient(configKey = "api-layer")
+@RegisterProvider(ApiLayerIapFilter.class)
 @RegisterProvider(ApiLayerAuthFilter.class)
 @Produces(MediaType.APPLICATION_JSON)
 public interface ApiLayerClient {

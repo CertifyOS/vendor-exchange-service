@@ -2,6 +2,7 @@ package com.certifyos.vendor_exchange.clients;
 
 import com.certifyos.vendor_exchange.ApiTestProfile;
 import com.certifyos.vendor_exchange.MongoResource;
+import com.certifyos.vendor_exchange.auth.GoogleIdTokenService;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.common.QuarkusTestResource;
@@ -26,12 +27,40 @@ class ApiLayerClientIT {
     @RestClient
     ApiLayerClient apiLayer;
 
+    @Inject
+    @RestClient
+    ApiLayerAuthClient authClient;
+
     @InjectMock
     ApiLayerTokenService tokens;
+
+    @InjectMock
+    GoogleIdTokenService google;
 
     @BeforeEach
     void before() {
         Mockito.when(tokens.accessToken()).thenReturn("api-layer-token");
+        Mockito.when(google.idToken("/projects/1/global/backendServices/2")).thenReturn("iap-token");
+    }
+
+    @Test
+    void clientCredentialsCallCarriesTheIapTokenAndNoAuth0Bearer() {
+        WireMockUpstreams.stubFor(WireMock.post(WireMock.urlEqualTo("/auth/client-credentials"))
+                .willReturn(WireMock.okJson("{\"accessToken\":\"t-1\",\"expiresIn\":3600,\"tokenType\":\"Bearer\"}")));
+
+        ApiLayerAuthClient.TokenResponse token =
+                authClient.clientCredentials(new ApiLayerAuthClient.TokenRequest("client-1", "secret-1"));
+
+        Assertions.assertEquals("t-1", token.accessToken());
+        Assertions.assertEquals(3600L, token.expiresIn());
+        WireMockUpstreams.verify(
+                1,
+                WireMock.postRequestedFor(WireMock.urlEqualTo("/auth/client-credentials"))
+                        .withHeader(ApiLayerIapFilter.PROXY_AUTHORIZATION, WireMock.equalTo("Bearer iap-token"))
+                        .withoutHeader("Authorization")
+                        .withHeader("Content-Type", WireMock.containing("application/json"))
+                        .withRequestBody(
+                                WireMock.equalToJson("{\"clientId\":\"client-1\",\"clientSecret\":\"secret-1\"}")));
     }
 
     @Test
@@ -50,6 +79,7 @@ class ApiLayerClientIT {
                 1,
                 WireMock.getRequestedFor(WireMock.urlPathEqualTo("/practitioners"))
                         .withHeader("Authorization", WireMock.equalTo("Bearer api-layer-token"))
+                        .withHeader(ApiLayerIapFilter.PROXY_AUTHORIZATION, WireMock.equalTo("Bearer iap-token"))
                         .withHeader(ApiLayerClient.TENANT_HEADER, WireMock.equalTo("org-a"))
                         .withQueryParam("filter", WireMock.equalTo(filter))
                         .withQueryParam("page", WireMock.equalTo("0"))
