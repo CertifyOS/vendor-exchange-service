@@ -25,6 +25,9 @@ import org.jboss.logging.Logger;
 @ApplicationScoped
 public class TemplateProvisioner {
 
+    /** The outbound file contract version the mappings CSV implements; recorded on every delivered file. */
+    public static final String SCHEMA_VERSION = "certify-export-v1";
+
     /** The template name this service assigns; the list search matches on it. */
     public static final String TEMPLATE_NAME = "vendor-exchange candor certify-export-v1";
 
