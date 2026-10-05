@@ -76,7 +76,7 @@ make deploy        # push, write terraform/internal/image.auto.tfvars, apply tem
 src/main/java/com/certifyos/vendor_exchange/
   config/       VendorExchangeConfig (closed mapping), RoleProfileCheck, MongoIndexes, Clocks
   persistence/  Collections, Transactions, Documents, Ids, AlreadyExistsException
-  audit/        AuditEvent, AuditEventType (24 types), AuditRepository, Actors
+  audit/        AuditEvent, AuditEventType (24 types), AuditDetailContract (required detail per type), AuditRepository, Actors
   auth/         UserContextFilter, PermissionFilter, DalUserClient, Google ID tokens, push token verifier
   http/         Problem (RFC 9457), Problems, ProblemException, ProblemMappers
   clients/      EgressClient, ApiLayerClient, ApiLayerTokenService, VendorBucket (GCS metadata), readiness
