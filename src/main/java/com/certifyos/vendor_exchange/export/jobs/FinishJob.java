@@ -2,6 +2,8 @@ package com.certifyos.vendor_exchange.export.jobs;
 
 import com.certifyos.vendor_exchange.export.batch.BatchState;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
 
 /**
  * Lifecycle step 6: confirm the object egress placed, reconcile the counts, move the batch to
@@ -9,7 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
  * subtask.
  */
 @ApplicationScoped
-public class FinishJob {
+public class FinishJob implements JobRequestHandler<FinishJobRequest> {
 
     /** Job name used in ids and logs. */
     public static final String NAME = "finish";
@@ -23,10 +25,12 @@ public class FinishJob {
     /**
      * Runs the job for one batch.
      *
-     * @param exportBatchId the batch, expected in {@code EGRESS_COMPLETED}
+     * @param request the batch, expected in {@code EGRESS_COMPLETED}, and the attempt
      */
-    public void run(String exportBatchId) {
-        if (support.loadExpecting(NAME, exportBatchId, BatchState.EGRESS_COMPLETED)
+    @Override
+    @Job(name = "finish %0")
+    public void run(FinishJobRequest request) {
+        if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_COMPLETED)
                 .isEmpty()) {
             return;
         }

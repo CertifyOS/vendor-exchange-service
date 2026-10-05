@@ -28,6 +28,9 @@ import org.jobrunr.jobs.states.StateName;
  * {@code EXPORT_BATCH_FAILED} in the same transaction. The metric and alert hooks arrive with the
  * observability subtask.
  *
+ * <p>A {@code JobRequest} job's {@code JobDetails.className} is the handler class and its single
+ * parameter is the request record, which is where the batch id comes from.
+ *
  * <p>How "retries exhausted" is detected: JobRunr's own {@code RetryFilter} is an elect-state filter
  * that turns a failed state into a scheduled one while retries remain. By the time this
  * apply-state filter runs, a job that still reads {@code FAILED} has no retry left.
@@ -125,7 +128,8 @@ public class BatchFinalFailureFilter implements ApplyStateFilter {
     }
 
     static String batchIdOf(Job job) {
-        return (String) job.getJobDetails().getJobParameters().get(0).getObject();
+        Object request = job.getJobDetails().getJobParameters().get(0).getObject();
+        return ((BatchJobRequest) request).exportBatchId();
     }
 
     static int countFailures(Job job) {

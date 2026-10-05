@@ -2,6 +2,8 @@ package com.certifyos.vendor_exchange.export.jobs;
 
 import com.certifyos.vendor_exchange.export.batch.BatchState;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
 
 /**
  * Lifecycle step 3: cancel a prior attempt on retry, pin the template, ask egress to build and
@@ -9,7 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
  * one external system, egress. The body arrives with the selection and export subtask.
  */
 @ApplicationScoped
-public class RequestEgressJob {
+public class RequestEgressJob implements JobRequestHandler<RequestEgressJobRequest> {
 
     /** Job name used in ids and logs. */
     public static final String NAME = "request-egress";
@@ -23,9 +25,12 @@ public class RequestEgressJob {
     /**
      * Runs the job for one batch.
      *
-     * @param exportBatchId the batch, expected in {@code NPIS_SELECTED}
+     * @param request the batch, expected in {@code NPIS_SELECTED}, and the attempt
      */
-    public void run(String exportBatchId) {
+    @Override
+    @Job(name = "request-egress %0")
+    public void run(RequestEgressJobRequest request) {
+        String exportBatchId = request.exportBatchId();
         if (support.loadExpecting(NAME, exportBatchId, BatchState.NPIS_SELECTED).isEmpty()) {
             return;
         }

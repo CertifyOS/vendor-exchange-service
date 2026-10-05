@@ -2,6 +2,8 @@ package com.certifyos.vendor_exchange.export.jobs;
 
 import com.certifyos.vendor_exchange.export.batch.BatchState;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.lambdas.JobRequestHandler;
 
 /**
  * Lifecycle step 5: the fallback when the completion event never arrives. Runs at most twice per
@@ -10,7 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
  * arrives with the selection and export subtask.
  */
 @ApplicationScoped
-public class DeadlineCheckJob {
+public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobRequest> {
 
     /** Job name used in ids and logs. */
     public static final String NAME = "deadline-check";
@@ -24,16 +26,15 @@ public class DeadlineCheckJob {
     /**
      * Runs one check.
      *
-     * @param exportBatchId the batch, expected in {@code EGRESS_REQUESTED}
-     * @param attempt the attempt the check belongs to
-     * @param check 1 for the deadline, 2 for the abandon check
+     * @param request the batch, expected in {@code EGRESS_REQUESTED}, the attempt and the check number
      */
-    public void run(String exportBatchId, int attempt, int check) {
-        if (support.loadExpecting(NAME, exportBatchId, BatchState.EGRESS_REQUESTED)
+    @Override
+    @Job(name = "deadline-check %0")
+    public void run(DeadlineCheckJobRequest request) {
+        if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_REQUESTED)
                 .isEmpty()) {
             return;
         }
-        throw new UnsupportedOperationException(
-                "deadline-check job body is not built yet (attempt " + attempt + ", check " + check + ")");
+        throw new UnsupportedOperationException("deadline-check job body is not built yet (" + request + ")");
     }
 }

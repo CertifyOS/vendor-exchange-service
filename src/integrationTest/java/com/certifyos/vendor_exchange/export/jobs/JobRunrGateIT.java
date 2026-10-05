@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.jobrunr.jobs.states.StateName;
-import org.jobrunr.scheduling.JobScheduler;
+import org.jobrunr.scheduling.JobRequestScheduler;
 import org.jobrunr.storage.StorageProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ public class JobRunrGateIT {
             new SelectionCriteria(List.of(new Clause("data.delegationStatus", Operator.IN, List.of("Direct"))));
 
     @Inject
-    JobScheduler scheduler;
+    JobRequestScheduler scheduler;
 
     @Inject
     StorageProvider storage;
@@ -61,22 +61,22 @@ public class JobRunrGateIT {
     @Test
     void enqueueWithTheSameIdRunsOnce() {
         UUID id = UUID.nameUUIDFromBytes("gate-run-once".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        scheduler.enqueue(id, GateJobs::run);
-        scheduler.enqueue(id, GateJobs::run);
+        scheduler.enqueue(id, new GateRunRequest("once"));
+        scheduler.enqueue(id, new GateRunRequest("once"));
         Awaitility.await()
                 .atMost(Duration.ofSeconds(60))
                 .until(() -> storage.getJobById(id).getState() == StateName.SUCCEEDED);
-        Assertions.assertEquals(1, GateJobs.RUNS.get());
+        Assertions.assertEquals(1, GateHandlers.RUNS.get());
     }
 
     @Test
     void failedJobIsRetriedThenSucceeds() {
         UUID id = UUID.nameUUIDFromBytes("gate-flaky".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        scheduler.enqueue(id, GateJobs::flaky);
+        scheduler.enqueue(id, new GateFlakyRequest("flaky"));
         Awaitility.await()
                 .atMost(Duration.ofSeconds(90))
                 .until(() -> storage.getJobById(id).getState() == StateName.SUCCEEDED);
-        Assertions.assertEquals(2, GateJobs.FLAKY.get(), "one failure, one success");
+        Assertions.assertEquals(2, GateHandlers.FLAKY.get(), "one failure, one success");
     }
 
     @Test
