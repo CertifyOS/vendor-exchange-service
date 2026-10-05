@@ -22,6 +22,9 @@ public class WorkerTestProfile implements QuarkusTestProfile {
         values.put("quarkus.jobrunr.background-job-server.poll-interval-in-seconds", "5");
         // The dashboard binds port 8000 on a real worker; a test JVM must not open it.
         values.put("quarkus.jobrunr.dashboard.enabled", "false");
+        // Production retries 8 times with 3^n-second backoff (hours). One retry here, so a job that
+        // always throws reaches FAILED in about 3 s and the final-failure filter can be observed.
+        values.put("vendor-exchange.job-retries", "1");
         return values;
     }
 }
