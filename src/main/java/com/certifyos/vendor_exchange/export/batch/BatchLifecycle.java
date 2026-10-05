@@ -120,6 +120,7 @@ public class BatchLifecycle {
                 .detail("cadence", schedule.cadence().toDocument())
                 .detail("trigger", trigger.name())
                 .detail("nextDueAt", nextDueAt)
+                .detail("scheduleVersion", schedule.version())
                 .build();
         try {
             transactions.run(session -> {
@@ -384,8 +385,8 @@ public class BatchLifecycle {
                 : AuditEventType.EXPORT_PRIOR_ATTEMPT_CANCEL_REJECTED;
         audit.write(AuditEvent.forBatch(type, batch.tenantId(), batch.vendor(), batch.id(), batch.attempt())
                 .occurredAt(now)
-                .detail("priorCorrelationId", priorCorrelationId)
-                .detail("egressAnswer", answer)
+                .detail("cancelledCorrelationId", priorCorrelationId)
+                .detail("outcome", answer)
                 .build());
     }
 
@@ -413,10 +414,20 @@ public class BatchLifecycle {
                         batch.id(),
                         batch.attempt())
                 .occurredAt(now)
+                .detail("outputUri", DestinationNames.gsPath(object.bucket(), object.objectName()))
+                .detail("totalRecords", object.metadataNumber("totalRecords"))
+                .detail(
+                        "waitSeconds",
+                        batch.egress().requestedAt() == null
+                                ? 0
+                                : Math.max(
+                                        0,
+                                        java.time.Duration.between(
+                                                        batch.egress().requestedAt(), now)
+                                                .getSeconds()))
                 .detail("completionSource", EgressDetails.CompletionSource.PRIOR_ATTEMPT.name())
                 .detail("priorCorrelationId", batch.egress().correlationId())
                 .detail("fileProducedBy", object.producedBy())
-                .detail("objectName", object.objectName())
                 .detail("bytes", object.size())
                 .build();
         boolean moved = transactions.run(session -> {

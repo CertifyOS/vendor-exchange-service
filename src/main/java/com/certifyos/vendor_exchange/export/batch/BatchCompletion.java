@@ -199,6 +199,7 @@ public class BatchCompletion {
                 .detail("fileName", file.name())
                 .detail("rowCount", file.rowCount())
                 .detail("bytes", file.bytes())
+                .detail("md5", file.md5())
                 .detail("completionSource", source)
                 .build();
         if (!transition(

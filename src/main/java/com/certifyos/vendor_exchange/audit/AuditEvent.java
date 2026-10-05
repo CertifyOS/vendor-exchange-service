@@ -139,6 +139,7 @@ public record AuditEvent(
         private String jobId;
         private Instant occurredAt;
         private final Map<String, Object> detail = new LinkedHashMap<>();
+        private final java.util.Set<String> named = new java.util.LinkedHashSet<>();
 
         private Builder(AuditEventType type, String tenantId, String vendor) {
             this.type = type;
@@ -173,6 +174,7 @@ public record AuditEvent(
 
         /** Adds one detail field; a null value is left out. */
         public Builder detail(String key, Object value) {
+            named.add(key);
             if (value != null) {
                 detail.put(key, value);
             }
@@ -187,6 +189,7 @@ public record AuditEvent(
 
         /** Builds the event with a fresh v7 id. */
         public AuditEvent build() {
+            AuditDetailContract.check(type, named);
             return new AuditEvent(
                     Ids.eventId(),
                     type,

@@ -204,6 +204,8 @@ public class BatchOperations {
                 .detail("seq", replacement.seq())
                 .detail("cadence", schedule.cadence().toDocument())
                 .detail("trigger", BatchLifecycle.Trigger.SUPERSEDE.name())
+                .detail("nextDueAt", schedule.nextDueAt())
+                .detail("scheduleVersion", schedule.version())
                 .detail("supersedes", batch.id())
                 .detail("reason", why)
                 .build();

@@ -12,8 +12,9 @@ import org.bson.Document;
  * @param rowCount file rows (practitioner × location)
  * @param bytes object size
  * @param schemaVersion the contract version, {@code certify-export-v1}
+ * @param md5 the object's MD5 as the bucket reports it, recorded not compared
  */
-public record FileDetails(String name, String path, Long rowCount, Long bytes, String schemaVersion) {
+public record FileDetails(String name, String path, Long rowCount, Long bytes, String schemaVersion, String md5) {
 
     /** The BSON shape. */
     public Document toDocument() {
@@ -23,6 +24,7 @@ public record FileDetails(String name, String path, Long rowCount, Long bytes, S
         Documents.put(doc, "rowCount", rowCount);
         Documents.put(doc, "bytes", bytes);
         Documents.put(doc, "schemaVersion", schemaVersion);
+        Documents.put(doc, "md5", md5);
         return doc;
     }
 
@@ -38,6 +40,7 @@ public record FileDetails(String name, String path, Long rowCount, Long bytes, S
                 doc.getString("path"),
                 Documents.longValue(doc, "rowCount"),
                 Documents.longValue(doc, "bytes"),
-                doc.getString("schemaVersion"));
+                doc.getString("schemaVersion"),
+                doc.getString("md5"));
     }
 }

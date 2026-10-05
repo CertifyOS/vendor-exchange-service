@@ -182,15 +182,8 @@ class ExportLaneIT {
                         "test-vendor-bucket",
                         name,
                         4096,
-                        Map.of(
-                                "complete",
-                                "true",
-                                "totalRecords",
-                                "3",
-                                "totalRows",
-                                "4",
-                                "correlationId",
-                                producedBy)));
+                        Map.of("complete", "true", "totalRecords", "3", "totalRows", "4", "correlationId", producedBy),
+                        "md5-" + "x"));
     }
 
     private ExportBatch awaitState(String exportBatchId, BatchState state) {
