@@ -10,6 +10,8 @@ import com.certifyos.vendor_exchange.auth.UserContextFilter;
 import com.certifyos.vendor_exchange.auth.WireMockDal;
 import com.certifyos.vendor_exchange.clients.ApiLayerTokenService;
 import com.certifyos.vendor_exchange.clients.WireMockUpstreams;
+import com.certifyos.vendor_exchange.export.batch.BatchState;
+import com.certifyos.vendor_exchange.export.batch.ExportBatchRepository;
 import com.certifyos.vendor_exchange.http.Problem;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import io.quarkus.test.InjectMock;
@@ -58,6 +60,12 @@ class ScheduleResourceIT {
 
     @Inject
     AuditRepository audit;
+
+    @Inject
+    ExportBatchRepository batches;
+
+    @Inject
+    org.jobrunr.storage.StorageProvider storage;
 
     // Emails are unique to this class: the DAL lookup is cached per email for the life of the
     // test application, which other classes with the same profile share, so a stub for an email
@@ -342,5 +350,74 @@ class ScheduleResourceIT {
                 .then()
                 .statusCode(403)
                 .body("code", Matchers.equalTo("TENANT_MISMATCH"));
+    }
+
+    @Test
+    @TestSecurity(user = "ops")
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
+    void runNowCreatesTheCurrentPeriodsBatchOnceAndAdvancesTheSchedule() {
+        stubNoTemplateThenCreate("tpl-runnow");
+        put("runnow", VALID_BODY).then().statusCode(201);
+        String expectedId =
+                TENANT + "-runnow-" + java.time.YearMonth.now(java.time.ZoneId.of("America/New_York")) + "-001";
+
+        String jobId = member().post(BASE + "runnow/run-now")
+                .then()
+                .statusCode(201)
+                .body("exportBatchId", Matchers.equalTo(expectedId))
+                .body("nextDueAt", Matchers.endsWith("T04:00:00Z"))
+                .extract()
+                .path("jobId");
+
+        Assertions.assertEquals(
+                BatchState.SCHEDULED, batches.find(expectedId).orElseThrow().state());
+        Assertions.assertEquals(
+                org.jobrunr.jobs.states.StateName.ENQUEUED,
+                storage.getJobById(java.util.UUID.fromString(jobId)).getState());
+        member().get(BASE + "runnow")
+                .then()
+                .statusCode(200)
+                .body("lastBatchId", Matchers.equalTo(expectedId))
+                .body("lastRunAt", Matchers.notNullValue())
+                .body("version", Matchers.equalTo(2));
+        List<AuditEventType> types = audit.findForSchedule(TENANT, "runnow", 10).stream()
+                .map(AuditEvent::type)
+                .toList();
+        Assertions.assertTrue(types.contains(AuditEventType.SCHEDULE_RUN_NOW), types.toString());
+        Assertions.assertTrue(types.contains(AuditEventType.EXPORT_BATCH_SCHEDULED), types.toString());
+        AuditEvent scheduled = audit.findForSchedule(TENANT, "runnow", 10).stream()
+                .filter(event -> event.type() == AuditEventType.EXPORT_BATCH_SCHEDULED)
+                .findFirst()
+                .orElseThrow();
+        Assertions.assertEquals("MANUAL", scheduled.detail().get("trigger"));
+        Assertions.assertEquals("sched@certifyos.com", scheduled.actor());
+
+        member().post(BASE + "runnow/run-now")
+                .then()
+                .statusCode(409)
+                .body("code", Matchers.equalTo("BATCH_EXISTS"))
+                .body("detail", Matchers.containsString(expectedId));
+        member().get(BASE + "runnow").then().statusCode(200).body("version", Matchers.equalTo(2));
+    }
+
+    @Test
+    @TestSecurity(user = "ops")
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
+    void runNowRefusesADisabledSchedule() {
+        stubNoTemplateThenCreate("tpl-runnow-off");
+        put("runnow-off", VALID_BODY).then().statusCode(201);
+        member().body("{\"reason\":\"hold\"}")
+                .post(BASE + "runnow-off/disable")
+                .then()
+                .statusCode(200);
+
+        member().post(BASE + "runnow-off/run-now")
+                .then()
+                .statusCode(409)
+                .body("code", Matchers.equalTo("SCHEDULE_DISABLED"));
+        member().post(BASE + "runnow-missing/run-now")
+                .then()
+                .statusCode(404)
+                .body("code", Matchers.equalTo("SCHEDULE_NOT_FOUND"));
     }
 }

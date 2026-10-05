@@ -142,6 +142,9 @@ public final class ScheduleRequests {
     /** {@code preview} body: the selection to test, or empty to test the stored one. */
     public record PreviewRequest(Map<String, ClauseRequest> selection) {}
 
+    /** {@code run-now} answer. */
+    public record RunNowResponse(String exportBatchId, String jobId, java.time.Instant nextDueAt) {}
+
     /** {@code preview} answer. */
     public record PreviewResponse(long totalCount) {}
 

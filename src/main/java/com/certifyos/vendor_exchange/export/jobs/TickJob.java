@@ -1,9 +1,12 @@
 package com.certifyos.vendor_exchange.export.jobs;
 
+import com.certifyos.vendor_exchange.audit.Actors;
 import com.certifyos.vendor_exchange.audit.AuditEvent;
 import com.certifyos.vendor_exchange.audit.AuditEventType;
 import com.certifyos.vendor_exchange.audit.AuditRepository;
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
+import com.certifyos.vendor_exchange.export.batch.BatchLifecycle;
+import com.certifyos.vendor_exchange.export.batch.StaleScheduleException;
 import com.certifyos.vendor_exchange.export.schedule.Schedule;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRepository;
 import com.certifyos.vendor_exchange.metrics.VendorExchangeMetrics;
@@ -11,16 +14,21 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.jboss.logging.Logger;
 import org.jobrunr.jobs.annotations.Recurring;
 
 /**
  * Lifecycle step 1: the daily tick. One indexed query for due schedules, then one transaction per
  * due row (batch insert, {@code nextDueAt} advance, {@code EXPORT_BATCH_SCHEDULED}) and one select
- * job each. Calls no other service. This step wires the recurring job, the query and the
- * {@code EXPORT_TICK_COMPLETED} fact; the per-row transaction arrives with the selection and export
- * subtask, so {@code batchesCreated} is empty until then.
+ * job each, through {@link BatchLifecycle}. Calls no other service. The period is the month of the
+ * due {@code nextDueAt} in the schedule's timezone, so a late tick still names the right month; the
+ * sequence is always 1, because the tick never creates a second batch for a period (supersede
+ * does). A period that already has its batch is counted as {@code skippedAlreadyExists}, and a
+ * schedule changed under the tick is skipped and logged.
  *
  * <p>The recurring registration is the {@code @Recurring} annotation on {@link #tick()}: the Quarkus
  * extension finds it at build time and registers it by id at startup, idempotently, with no lambda
@@ -42,6 +50,7 @@ public class TickJob {
 
     private final VendorExchangeConfig cfg;
     private final ScheduleRepository schedules;
+    private final BatchLifecycle lifecycle;
     private final AuditRepository audit;
     private final VendorExchangeMetrics metrics;
     private final Clock clock;
@@ -49,12 +58,14 @@ public class TickJob {
     public TickJob(
             VendorExchangeConfig cfg,
             ScheduleRepository schedules,
+            BatchLifecycle lifecycle,
             AuditRepository audit,
             VendorExchangeMetrics metrics,
             Clock clock) {
         this.metrics = metrics;
         this.cfg = cfg;
         this.schedules = schedules;
+        this.lifecycle = lifecycle;
         this.audit = audit;
         this.clock = clock;
     }
@@ -78,9 +89,29 @@ public class TickJob {
             return new TickResult(tickId, 0, List.of(), 0, 0);
         }
         List<Schedule> due = schedules.findDue(started, DUE_LIMIT);
-        List<TickResult.Created> created = List.of();
+        List<TickResult.Created> created = new ArrayList<>();
+        int skipped = 0;
+        for (Schedule schedule : due) {
+            YearMonth period = YearMonth.from(schedule.nextDueAt().atZone(schedule.timezone()));
+            try {
+                Optional<BatchLifecycle.Scheduled> scheduled = lifecycle.schedule(
+                        schedule, period, 1, BatchLifecycle.Trigger.TICK, Actors.SYSTEM, clock.instant(), null);
+                if (scheduled.isPresent()) {
+                    created.add(new TickResult.Created(
+                            schedule.tenantId(),
+                            schedule.vendor(),
+                            scheduled.get().batch().id(),
+                            scheduled.get().jobId().toString(),
+                            scheduled.get().nextDueAt()));
+                } else {
+                    skipped++;
+                }
+            } catch (StaleScheduleException changed) {
+                LOG.warnf("%s: %s; the schedule is left for the next tick", tickId, changed.getMessage());
+            }
+        }
         long durationMs = clock.millis() - started.toEpochMilli();
-        TickResult result = new TickResult(tickId, due.size(), created, 0, durationMs);
+        TickResult result = new TickResult(tickId, due.size(), created, skipped, durationMs);
         metrics.tick(due.size(), Duration.ofMillis(durationMs));
         audit.write(AuditEvent.of(AuditEventType.EXPORT_TICK_COMPLETED, null, null)
                 .occurredAt(clock.instant())
@@ -92,7 +123,9 @@ public class TickJob {
                 .detail("skippedAlreadyExists", result.skippedAlreadyExists())
                 .detail("durationMs", durationMs)
                 .build());
-        LOG.infof("%s: schedulesDue=%d batchesCreated=%d", tickId, due.size(), created.size());
+        LOG.infof(
+                "%s: schedulesDue=%d batchesCreated=%d skippedAlreadyExists=%d",
+                tickId, due.size(), created.size(), skipped);
         return result;
     }
 
