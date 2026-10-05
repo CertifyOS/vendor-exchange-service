@@ -84,6 +84,13 @@ public interface VendorExchangeConfig {
 
         /** Auth0 machine-to-machine client secret; absent means api-layer calls are not configured yet. */
         Optional<String> clientSecret();
+
+        /**
+         * IAP audience of api-layer's backend when it sits behind IAP with a Google-managed client
+         * ({@code /projects/<number>/global/backendServices/<id>}). Present: a Google ID token for
+         * it is sent in {@code Proxy-Authorization} beside the Auth0 bearer. Absent: no IAP header.
+         */
+        Optional<String> iapAudience();
     }
 
     /** Pub/Sub push settings. Both absent until the subscription exists; the push endpoint answers 401 meanwhile. */
