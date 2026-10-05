@@ -1,10 +1,10 @@
 package com.certifyos.vendor_exchange.auth;
 
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
-import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Singleton;
 
 /** The IAP token for the DAL backend. */
-@ApplicationScoped
+@Singleton
 public class DalAuthFilter extends GoogleAuthFilter {
 
     private final VendorExchangeConfig cfg;

@@ -8,6 +8,8 @@ import java.io.IOException;
 /**
  * Adds a Google ID token for one IAP-protected backend to every outbound call. One subclass per
  * backend names the audience; the REST client interface registers that subclass as a provider.
+ * Subclasses are {@code @Singleton}, not {@code @ApplicationScoped}: a normal-scoped bean needs a
+ * client proxy, and ArC cannot synthesise a no-args constructor for a class whose parent has none.
  */
 public abstract class GoogleAuthFilter implements ClientRequestFilter {
 

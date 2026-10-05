@@ -47,6 +47,17 @@ class GoogleIdTokenServiceTest {
             lastOptions = options;
             return IdToken.create(fakeJwt(targetAudience, NOW.plus(lifetime)));
         }
+
+        // GoogleCredentials defines equals; a recording stub is only ever equal to itself.
+        @Override
+        public boolean equals(Object other) {
+            return this == other;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
     }
 
     @Test
@@ -85,9 +96,7 @@ class GoogleIdTokenServiceTest {
 
     @Test
     void refusesCredentialsThatCannotMintIdTokens() {
-        GoogleCredentials plain = new GoogleCredentials(new AccessToken("t", null)) {
-            private static final long serialVersionUID = 1L;
-        };
+        GoogleCredentials plain = GoogleCredentials.create(new AccessToken("t", null));
         IllegalStateException refused =
                 Assertions.assertThrows(IllegalStateException.class, () -> GoogleIdTokenService.mint(plain, "aud"));
         Assertions.assertTrue(refused.getMessage().contains("IdTokenProvider"));
