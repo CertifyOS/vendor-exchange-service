@@ -104,6 +104,21 @@ components:
             $ref: "#/components/schemas/ClauseRequest"
         egressTemplateId:
           type: string
+    ReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    RetryResponse:
+      type: object
+      properties:
+        exportBatchId:
+          type: string
+        attempt:
+          type: integer
+          format: int32
+        jobId:
+          type: string
     RunNowResponse:
       type: object
       properties:
@@ -149,6 +164,13 @@ components:
           $ref: "#/components/schemas/Instant"
         updatedAt:
           $ref: "#/components/schemas/Instant"
+    SupersedeResponse:
+      type: object
+      properties:
+        exportBatchId:
+          type: string
+        jobId:
+          type: string
   securitySchemes:
     platform-token:
       description: Auth0 platform access token. The tenant-id header selects the tenant.
@@ -184,13 +206,23 @@ paths:
   /v1/vendor-exports:
     get:
       summary: List export batches
-      description: Export batches of the tenant named by the tenant-id header. Empty
-        until the export lane creates batches.
+      description: "Export batches of the tenant named by the tenant-id header, newest\
+        \ first, at most 100; period narrows to one month."
       tags:
       - vendor-exports
+      parameters:
+      - name: period
+        in: query
+        schema:
+          type: string
+      - name: tenantId
+        in: query
+        schema:
+          type: string
       responses:
         "400":
-          description: tenant-id header missing (TENANT_REQUIRED)
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
           content:
             application/problem+json:
               schema:
@@ -198,8 +230,21 @@ paths:
         "401":
           description: No or invalid platform token
         "403":
-          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED)\
-            \ or lacks the permission (PERMISSION_DENIED)"
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
           content:
             application/problem+json:
               schema:
@@ -681,6 +726,244 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/{exportBatchId}:
+    get:
+      summary: Read an export batch
+      description: The batch document minus internal job ids.
+      tags:
+      - vendor-exports
+      parameters:
+      - name: exportBatchId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "400":
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/{exportBatchId}/npis:
+    get:
+      summary: List a batch's registered NPIs
+      description: "Ordered by NPI; pass nextAfter back as after for the next page.\
+        \ On a count mismatch, this is the list an operator diffs against the file."
+      tags:
+      - vendor-exports
+      parameters:
+      - name: exportBatchId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: after
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "400":
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/{exportBatchId}/retry:
+    post:
+      summary: Retry a failed export batch
+      description: "From FAILED only. attempt + 1; failedStep SELECT goes back to\
+        \ SCHEDULED with a select job, EGRESS to NPIS_SELECTED with an egress request\
+        \ job (which cancels the prior attempt first)."
+      tags:
+      - vendor-exports
+      parameters:
+      - name: exportBatchId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryResponse"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/{exportBatchId}/supersede:
+    post:
+      summary: Supersede a delivered export batch
+      description: "From DELIVERED only. Creates seq + 1 in SCHEDULED with the schedule's\
+        \ current selection, marks this batch SUPERSEDED and points the schedule's\
+        \ lastBatchId at the new one. The old file stays in the vendor folder."
+      tags:
+      - vendor-exports
+      parameters:
+      - name: exportBatchId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "201":
+          description: New batch created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupersedeResponse"
       security:
       - platform-token: []
 info:

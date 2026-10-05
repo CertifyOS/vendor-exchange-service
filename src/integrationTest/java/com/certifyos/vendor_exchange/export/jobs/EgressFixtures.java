@@ -59,7 +59,20 @@ public final class EgressFixtures {
             BatchState target,
             int npiCount,
             Instant requestedAt) {
-        ExportBatch batch = ExportBatch.scheduled(tenant, "candor", PERIOD, 1, CRITERIA, requestedAt.minusSeconds(60));
+        return batchIn(transactions, batches, npis, tenant, "candor", target, npiCount, requestedAt);
+    }
+
+    /** As {@link #batchIn(Transactions, ExportBatchRepository, ExportNpiRepository, String, BatchState, int, Instant)}, for a vendor. */
+    public static ExportBatch batchIn(
+            Transactions transactions,
+            ExportBatchRepository batches,
+            ExportNpiRepository npis,
+            String tenant,
+            String vendor,
+            BatchState target,
+            int npiCount,
+            Instant requestedAt) {
+        ExportBatch batch = ExportBatch.scheduled(tenant, vendor, PERIOD, 1, CRITERIA, requestedAt.minusSeconds(60));
         EgressDetails egress = requested(tenant, batch.id(), 1, requestedAt);
         transactions.run(session -> {
             batches.insert(session, batch);
