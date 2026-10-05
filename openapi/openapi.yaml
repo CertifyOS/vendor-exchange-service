@@ -1,0 +1,173 @@
+---
+openapi: 3.1.0
+tags:
+- name: internal
+- name: vendor-exports
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        data:
+          type: string
+        messageId:
+          type: string
+        publishTime:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+    PubSubPushMessage:
+      type: object
+      properties:
+        message:
+          $ref: "#/components/schemas/Message"
+        subscription:
+          type: string
+  securitySchemes:
+    platform-token:
+      description: Auth0 platform access token. The tenant-id header selects the tenant.
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /internal/vendor-exports/egress-events:
+    post:
+      summary: Receive an egress completion event
+      description: "Pub/Sub push endpoint. Requires the subscription's OIDC identity\
+        \ token; answers 204 to acknowledge, including for a message it cannot parse."
+      tags:
+      - internal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PubSubPushMessage"
+        required: true
+      responses:
+        "204":
+          description: Acknowledged
+        "401":
+          description: "Missing, rejected or not yet configured push identity (PUSH_TOKEN_REQUIRED,\
+            \ PUSH_TOKEN_REJECTED, PUSH_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400":
+          description: Bad Request
+  /v1/vendor-exports:
+    get:
+      summary: List export batches
+      description: Export batches of the tenant named by the tenant-id header. Empty
+        until the export lane creates batches.
+      tags:
+      - vendor-exports
+      responses:
+        "400":
+          description: tenant-id header missing (TENANT_REQUIRED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED)\
+            \ or lacks the permission (PERMISSION_DENIED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/schedules:
+    get:
+      summary: List export schedules
+      description: Schedules of the tenant named by the tenant-id header. Empty until
+        schedule management is built.
+      tags:
+      - vendor-exports
+      responses:
+        "400":
+          description: tenant-id header missing (TENANT_REQUIRED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED)\
+            \ or lacks the permission (PERMISSION_DENIED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/tick:
+    post:
+      summary: Run the export tick now
+      description: Runs the daily schedule tick inline and returns its counts. Same
+        code path as the 06:00 UTC recurring job.
+      tags:
+      - vendor-exports
+      responses:
+        "400":
+          description: tenant-id header missing (TENANT_REQUIRED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED)\
+            \ or lacks the permission (PERMISSION_DENIED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+info:
+  title: vendor-exchange-service
+  version: 1.0.0
+  description: "Directory accuracy vendor exchange: scheduled practitioner export\
+    \ to an accuracy vendor, and later ingestion of the vendor's response."

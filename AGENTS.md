@@ -10,7 +10,7 @@ The one guidance file for coding agents and people. Other tool files point here.
 
 ## Layout (ArchitectureTest enforces the dependency rules)
 
-- `config/`, `persistence/`, `audit/`, `auth/`, `clients/`, `metrics/`, `ops/` are shared foundations. They never import `export/` or any other feature package.
+- `config/`, `persistence/`, `audit/`, `auth/`, `http/`, `clients/`, `metrics/` are shared foundations. They never import `export/` or any other feature package. Operator endpoints, including ops actions such as the tick, live in `export/api/`.
 - `export/` is the export lane: `schedule/`, `batch/`, `jobs/`, `events/`, `api/`. Phase 2 adds `ingestion/` beside it.
 - No `util`, `common` or `helpers` package. A helper lives with the feature that uses it.
 - Tests: `src/test` is plain JUnit (logic, ArchUnit, SmallRye config); `src/integrationTest` is Quarkus wiring on Testcontainers MongoDB with exactly two profiles, `ApiTestProfile` and `WorkerTestProfile`.
@@ -21,6 +21,7 @@ The one guidance file for coding agents and people. Other tool files point here.
 - One logger: `org.jboss.logging.Logger`, printf style (`infof("%s", x)`), never `{}` (ArchitectureTest, Checkstyle).
 - One `ObjectMapper`, injected; no `new ObjectMapper()`; no `Executors.new*`; no `Thread.sleep` (ArchitectureTest).
 - Typed contracts: no `JsonNode` in `api`, `events`, `clients` (ArchitectureTest); DTOs are records.
+- Every HTTP endpoint carries `@Operation`; every `export/api` endpoint carries `@RequiresPermission` (ArchitectureTest). `openapi/openapi.yaml` must equal what the code produces (`verifyOpenApi` in `check`; regenerate with `make openapi`); the `openapi` CI job refuses breaking changes against `main`.
 - 500 lines per main file, 1,000 per test file, 7 constructor parameters (Checkstyle).
 - Ticket keys (`CP-nnnnn`) only in commits and PRs, never in source (Checkstyle `BanTicketKeys`). `@Disabled` needs a reason with a ticket (`DisabledNeedsTicket`).
 - Single-letter local variables are refused (`LocalVariableName`); `catch (Exception e)` is fine (a parameter).
@@ -34,7 +35,8 @@ The one guidance file for coding agents and people. Other tool files point here.
 - Every batch state change is a compare-and-set on `state` inside a Mongo transaction, with its audit event in the same transaction. Nothing outside MongoDB (an enqueue, a publish) ever runs inside `Transactions.run`.
 - Every repository method takes the tenant or an id that embeds it; every list query carries a limit.
 - Logs carry ids and counts, never bodies, DTOs, bound values or PII.
-- Error responses are RFC 9457 problem+json with a stable `code`, rendered only by global exception mappers.
+- Error responses are RFC 9457 problem+json with a stable `code` (`http/Problem`), rendered only by `http/ProblemMappers` and the auth filters' aborts through `http/Problems`. Resources throw; nothing builds an error body by hand.
+- Inbound auth: the HTTP policy requires a platform token on `/v1/*`; `auth/UserContextFilter` requires `tenant-id` and a role in that tenant (DAL lookup, cached by email); `auth/PermissionFilter` checks `@RequiresPermission` only when `vendor-exchange.permissions.enforce` is true. `/internal/*` is guarded by `auth/PubSubPushAuthFilter` (Google OIDC push token), closed with 401 until the push settings exist.
 
 ## Working
 

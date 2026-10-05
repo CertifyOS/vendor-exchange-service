@@ -52,6 +52,11 @@ test: ## Unit tests (plain JUnit, ArchUnit)
 check: ## Everything CI runs (lint, unit tests, integration tests on Testcontainers)
 	$(GRADLEW) check
 
+.PHONY: openapi
+openapi: ## Regenerate openapi/openapi.yaml from the code (commit the result; CI verifies it)
+	$(GRADLEW) quarkusBuild
+	cp build/openapi/openapi.yaml openapi/openapi.yaml
+
 .PHONY: build
 build: ## Fast-jar and the linux/amd64 image
 	$(GRADLEW) quarkusBuild

@@ -26,6 +26,12 @@ public final class TestConfig {
         values.put("vendor-exchange.dal.url", "http://localhost:0");
         values.put("vendor-exchange.dal.iap-client-id", "test-dal-iap-client-id");
         values.put("vendor-exchange.api-layer.url", "http://localhost:0");
+        // Push delivery configured, so the push filter's verifier path is exercised; the verifier
+        // itself is mocked in the test that needs it (no Google certificates in CI).
+        values.put("vendor-exchange.pubsub.push-service-account", "pubsub-push@test.iam.gserviceaccount.com");
+        values.put(
+                "vendor-exchange.pubsub.push-audience",
+                "https://vendor-exchange.test/internal/vendor-exports/egress-events");
         return values;
     }
 }

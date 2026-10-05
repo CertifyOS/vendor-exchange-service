@@ -14,6 +14,14 @@ repositories {
 group "com.certifyos.vendor_exchange"
 version = "1.0.0"
 
+quarkus {
+    // The OpenAPI document is written on quarkusBuild only (not on test boots, whose documents would
+    // include test-only resources), so verifyOpenApi can compare it with the committed contract.
+    quarkusBuildProperties.put(
+            "quarkus.smallrye-openapi.store-schema-directory",
+            layout.buildDirectory.dir("openapi").get().asFile.path)
+}
+
 dependencies {
     implementation enforcedPlatform(libs.quarkus.bom)
     implementation libs.bundles.quarkus.runtime
@@ -189,3 +197,23 @@ task testAll {
     dependsOn test, integrationTest
     integrationTest.mustRunAfter test
 }
+
+// The committed OpenAPI contract must equal the one the code produces. `make openapi` regenerates it;
+// CI refuses a contract change that was not committed, and the oasdiff job refuses a breaking one.
+tasks.register('verifyOpenApi') {
+    dependsOn 'quarkusBuild'
+    description = 'Fails when openapi/openapi.yaml differs from the document the build produced'
+    group = 'verification'
+    def generated = layout.buildDirectory.file('openapi/openapi.yaml')
+    def committed = layout.projectDirectory.file('openapi/openapi.yaml')
+    inputs.file(generated)
+    inputs.file(committed)
+    doLast {
+        def produced = generated.get().asFile.text
+        def expected = committed.asFile.text
+        if (produced != expected) {
+            throw new GradleException('openapi/openapi.yaml is out of date with the code. Run `make openapi` and commit the result.')
+        }
+    }
+}
+check.dependsOn verifyOpenApi

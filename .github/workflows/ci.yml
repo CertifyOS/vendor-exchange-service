@@ -56,3 +56,30 @@ jobs:
           docker run --rm -v "$PWD:/repo" -w /repo
           ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
           git --no-banner --redact --exit-code 1 .
+
+  # Breaking changes to the committed OpenAPI contract fail the pull request. The binary is a GitHub
+  # release pinned by its published sha256 (the ghcr.io image cannot be pulled anonymously). A branch
+  # whose base has no contract yet (the first one) skips the comparison.
+  openapi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install oasdiff 1.33.0
+        run: |
+          curl -sSL -o oasdiff.tar.gz https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_linux_amd64.tar.gz
+          echo "43a4e328e2d13ba1552d760aa68d2485c75c5621f309f6ff64ae895188345247  oasdiff.tar.gz" | sha256sum -c -
+          tar -xzf oasdiff.tar.gz oasdiff
+          ./oasdiff --version
+
+      - name: Breaking changes against the base branch
+        run: |
+          if git show "origin/${{ github.base_ref }}:openapi/openapi.yaml" > base.yaml 2>/dev/null; then
+            ./oasdiff breaking base.yaml openapi/openapi.yaml --fail-on ERR
+          else
+            echo "base branch has no openapi/openapi.yaml yet; nothing to compare"
+          fi

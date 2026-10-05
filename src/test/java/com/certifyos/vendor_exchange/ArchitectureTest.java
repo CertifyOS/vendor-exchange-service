@@ -1,6 +1,9 @@
 package com.certifyos.vendor_exchange;
 
+import com.certifyos.vendor_exchange.auth.RequiresPermission;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -8,7 +11,14 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import java.util.concurrent.Executors;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
 /**
  * The module layout and coding rules from the new-service playbook, enforced on every build. Rules
@@ -29,6 +39,7 @@ class ArchitectureTest {
                     "..vendor_exchange.persistence..",
                     "..vendor_exchange.audit..",
                     "..vendor_exchange.auth..",
+                    "..vendor_exchange.http..",
                     "..vendor_exchange.clients..",
                     "..vendor_exchange.metrics..")
             .should()
@@ -88,5 +99,39 @@ class ArchitectureTest {
             .should()
             .dependOnClassesThat()
             .haveFullyQualifiedName("com.fasterxml.jackson.databind.JsonNode")
+            .allowEmptyShould(true);
+
+    /** A method that answers an HTTP verb. */
+    static final DescribedPredicate<CanBeAnnotated> HTTP_ENDPOINT = CanBeAnnotated.Predicates.annotatedWith(GET.class)
+            .or(CanBeAnnotated.Predicates.annotatedWith(POST.class))
+            .or(CanBeAnnotated.Predicates.annotatedWith(PUT.class))
+            .or(CanBeAnnotated.Predicates.annotatedWith(PATCH.class))
+            .or(CanBeAnnotated.Predicates.annotatedWith(DELETE.class))
+            .as("an HTTP endpoint method");
+
+    /**
+     * Every served HTTP endpoint is documented: the committed OpenAPI contract is built from these.
+     * REST client interfaces are callers, not endpoints.
+     */
+    @ArchTest
+    static final ArchRule endpointsAreDocumented = ArchRuleDefinition.methods()
+            .that()
+            .areDeclaredInClassesThat()
+            .areNotAnnotatedWith(RegisterRestClient.class)
+            .and(HTTP_ENDPOINT)
+            .should()
+            .beAnnotatedWith(Operation.class)
+            .allowEmptyShould(true);
+
+    /** Every operator endpoint names the permission it needs, even while enforcement is off. */
+    @ArchTest
+    static final ArchRule operatorEndpointsDeclarePermission = ArchRuleDefinition.methods()
+            .that()
+            .areDeclaredInClassesThat()
+            .resideInAPackage("..export.api..")
+            .and()
+            .areAnnotatedWith(Operation.class)
+            .should()
+            .beAnnotatedWith(RequiresPermission.class)
             .allowEmptyShould(true);
 }
