@@ -57,6 +57,11 @@ public class BatchJobSupport {
         return batch;
     }
 
+    /** The service configuration, for the settings a job body reads. */
+    public VendorExchangeConfig config() {
+        return cfg;
+    }
+
     /** Whether the service-wide kill switch is on. */
     public boolean enabled() {
         return cfg.enabled();

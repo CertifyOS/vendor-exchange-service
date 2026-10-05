@@ -3,6 +3,8 @@ package com.certifyos.vendor_exchange.export.batch;
 import com.certifyos.vendor_exchange.audit.AuditEvent;
 import com.certifyos.vendor_exchange.audit.AuditEventType;
 import com.certifyos.vendor_exchange.audit.AuditRepository;
+import com.certifyos.vendor_exchange.clients.EgressTemplate;
+import com.certifyos.vendor_exchange.clients.VendorBucket;
 import com.certifyos.vendor_exchange.export.jobs.JobEnqueuer;
 import com.certifyos.vendor_exchange.export.jobs.JobIds;
 import com.certifyos.vendor_exchange.export.jobs.SelectJob;
@@ -14,10 +16,13 @@ import com.certifyos.vendor_exchange.persistence.Transactions;
 import com.mongodb.client.model.Updates;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.jboss.logging.Logger;
 
@@ -256,5 +261,193 @@ public class BatchLifecycle {
         if (!moved) {
             throw new IllegalStateException(batch.id() + " is no longer " + batch.state() + "; " + to + " not written");
         }
+    }
+
+    /**
+     * The schedule a batch belongs to.
+     *
+     * @param batch the batch
+     * @return the schedule
+     * @throws IllegalStateException when it no longer exists, which no job can recover from
+     */
+    public Schedule scheduleOf(ExportBatch batch) {
+        return schedules
+                .find(batch.tenantId(), batch.vendor())
+                .orElseThrow(() -> new IllegalStateException("no schedule for " + batch.id()));
+    }
+
+    /**
+     * Pins the template and the destination on the batch before the first egress call, so every
+     * attempt sends the same values and a retry never re-reads the template. Written with
+     * {@code updateInState} on {@code NPIS_SELECTED}; no audit event, the request event carries the
+     * template id.
+     *
+     * @param batch the batch
+     * @param schedule its schedule, for the timezone of the file date
+     * @param template the template as api-layer returned it
+     * @param vendorBucket the destination bucket
+     * @param now the time of the write; its date in the schedule's timezone names the file
+     * @return the batch as stored after the pin
+     */
+    public ExportBatch pinTemplate(
+            ExportBatch batch, Schedule schedule, EgressTemplate template, String vendorBucket, Instant now) {
+        ZoneId zone = schedule.timezone() == null ? ZoneId.of("UTC") : schedule.timezone();
+        LocalDate day = now.atZone(zone).toLocalDate();
+        String fileName = DestinationNames.fileName(batch.tenantId(), batch.id(), day);
+        String objectName = DestinationNames.objectName(batch.tenantId(), fileName);
+        Document destination = new EgressDetails.Destination(vendorBucket, objectName).toDocument();
+        Bson updates = Updates.combine(
+                Updates.set("egress.templateId", template.id()),
+                Updates.set("egress.templateVersion", template.version()),
+                Updates.set("egress.mappingsCsvUrl", template.mappingsCsvUrl()),
+                Updates.set("egress.separator", template.separator()),
+                Updates.set("egress.outputFormat", template.outputFormat()),
+                Updates.set("egress.rowExpansionKeys", template.rowExpansionKeys()),
+                Updates.set("egress.destination", destination),
+                Updates.set("file.name", fileName),
+                Updates.set("file.path", DestinationNames.gsPath(vendorBucket, objectName)));
+        boolean still = transactions.run(
+                session -> batches.updateInState(session, batch.id(), BatchState.NPIS_SELECTED, now, updates));
+        if (!still) {
+            throw new IllegalStateException(batch.id() + " left NPIS_SELECTED before the template was pinned");
+        }
+        LOG.infof(
+                "%s pinned template %s v%s, destination %s", batch.id(), template.id(), template.version(), objectName);
+        return batches.find(batch.id()).orElseThrow();
+    }
+
+    /**
+     * Egress accepted (or already held) the request: {@code NPIS_SELECTED} to {@code EGRESS_REQUESTED}
+     * with the correlation id, job reference, request time and the deadline job id, plus
+     * {@code EXPORT_EGRESS_REQUESTED}; then the first deadline check is scheduled.
+     *
+     * @param batch the batch, pinned
+     * @param correlationId this attempt's egress correlation id
+     * @param jobReference what egress called the job
+     * @param npiCount NPIs sent in the filter
+     * @param egressResponse a short description of egress's answer, for the event
+     * @param deadlineAt when the first deadline check runs
+     * @param now the time of the write
+     */
+    public void egressRequested(
+            ExportBatch batch,
+            String correlationId,
+            String jobReference,
+            int npiCount,
+            String egressResponse,
+            Instant deadlineAt,
+            Instant now) {
+        UUID deadlineJobId = JobIds.deadline(batch.id(), batch.attempt(), 1);
+        Bson updates = Updates.combine(
+                Updates.set("egress.correlationId", correlationId),
+                Updates.set("egress.jobReference", jobReference),
+                Updates.set("egress.requestedAt", now),
+                Updates.set("egress.deadlineJobId", deadlineJobId.toString()),
+                Updates.unset("egress.completedAt"),
+                Updates.unset("egress.completionSource"));
+        AuditEvent event = AuditEvent.forBatch(
+                        AuditEventType.EXPORT_EGRESS_REQUESTED,
+                        batch.tenantId(),
+                        batch.vendor(),
+                        batch.id(),
+                        batch.attempt())
+                .occurredAt(now)
+                .detail("egressCorrelationId", correlationId)
+                .detail("templateId", batch.egress().templateId())
+                .detail("templateVersion", batch.egress().templateVersion())
+                .detail("npiCount", npiCount)
+                .detail("egressResponse", egressResponse)
+                .detail("destination", batch.egress().destination().toDocument())
+                .detail("deadlineAt", deadlineAt)
+                .detail("deadlineJobId", deadlineJobId.toString())
+                .build();
+        transition(batch, BatchState.EGRESS_REQUESTED, updates, event, now);
+        enqueuer.deadlineCheck(batch.id(), batch.attempt(), 1, deadlineAt);
+        LOG.infof(
+                "%s egress requested as %s, deadline check %s at %s",
+                batch.id(), correlationId, deadlineJobId, deadlineAt);
+    }
+
+    /**
+     * Records the cancel of the prior attempt before a retry asks egress again.
+     *
+     * @param batch the batch
+     * @param priorCorrelationId the attempt cancelled
+     * @param accepted whether egress accepted the cancel
+     * @param answer egress's status or answer text
+     * @param now the time
+     */
+    public void priorAttemptCancel(
+            ExportBatch batch, String priorCorrelationId, boolean accepted, String answer, Instant now) {
+        AuditEventType type = accepted
+                ? AuditEventType.EXPORT_PRIOR_ATTEMPT_CANCELLED
+                : AuditEventType.EXPORT_PRIOR_ATTEMPT_CANCEL_REJECTED;
+        audit.write(AuditEvent.forBatch(type, batch.tenantId(), batch.vendor(), batch.id(), batch.attempt())
+                .occurredAt(now)
+                .detail("priorCorrelationId", priorCorrelationId)
+                .detail("egressAnswer", answer)
+                .build());
+    }
+
+    /**
+     * A retry found the prior attempt's complete file already at the destination, so there is
+     * nothing to ask egress for: {@code NPIS_SELECTED} to {@code EGRESS_REQUESTED} to
+     * {@code EGRESS_COMPLETED} in one transaction (the state machine has no shortcut), with
+     * {@code completionSource = PRIOR_ATTEMPT} and {@code EXPORT_EGRESS_COMPLETED}; then the finish
+     * job.
+     *
+     * @param batch the batch
+     * @param object the complete object
+     * @param now the time of the write
+     * @return the finish job id
+     */
+    public UUID completedByPriorAttempt(ExportBatch batch, VendorBucket.ObjectInfo object, Instant now) {
+        Bson updates = Updates.combine(
+                Updates.set("egress.completedAt", now),
+                Updates.set("egress.completionSource", EgressDetails.CompletionSource.PRIOR_ATTEMPT.name()),
+                Updates.set("egress.fileProducedBy", object.producedBy()));
+        AuditEvent event = AuditEvent.forBatch(
+                        AuditEventType.EXPORT_EGRESS_COMPLETED,
+                        batch.tenantId(),
+                        batch.vendor(),
+                        batch.id(),
+                        batch.attempt())
+                .occurredAt(now)
+                .detail("completionSource", EgressDetails.CompletionSource.PRIOR_ATTEMPT.name())
+                .detail("priorCorrelationId", batch.egress().correlationId())
+                .detail("fileProducedBy", object.producedBy())
+                .detail("objectName", object.objectName())
+                .detail("bytes", object.size())
+                .build();
+        boolean moved = transactions.run(session -> {
+            boolean first = batches.transition(
+                    session, batch.id(), BatchState.NPIS_SELECTED, BatchState.EGRESS_REQUESTED, now, null);
+            boolean second = first
+                    && batches.transition(
+                            session,
+                            batch.id(),
+                            BatchState.EGRESS_REQUESTED,
+                            BatchState.EGRESS_COMPLETED,
+                            now,
+                            updates);
+            if (second) {
+                audit.write(session, event);
+            }
+            return second;
+        });
+        if (!moved) {
+            throw new IllegalStateException(batch.id() + " is no longer NPIS_SELECTED; EGRESS_COMPLETED not written");
+        }
+        UUID jobId = enqueuer.finish(batch.id(), batch.attempt());
+        metrics.completion(EgressDetails.CompletionSource.PRIOR_ATTEMPT.name());
+        LOG.infof(
+                "%s: prior attempt %s already delivered %s; finish job %s",
+                batch.id(), batch.egress().correlationId(), object.objectName(), jobId);
+        return jobId;
+    }
+
+    /** Egress refused the request; counted so the dashboard sees it before the retries run out. */
+    public void egressRefused(ExportBatch batch, String reason) {
+        metrics.egressFailed(batch.tenantId(), reason);
     }
 }
