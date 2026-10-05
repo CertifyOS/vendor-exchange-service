@@ -2,6 +2,7 @@ package com.certifyos.vendor_exchange.export.jobs;
 
 import org.jboss.logging.MDC;
 import org.jobrunr.jobs.context.JobContext;
+import org.jobrunr.server.runner.ThreadLocalJobContext;
 
 /**
  * The three keys every job log line carries, put on the MDC for the job's duration: {@code
@@ -29,6 +30,16 @@ public final class JobLogContext implements AutoCloseable {
      * @param job JobRunr's context, null or {@code JobContext.Null} outside a job run
      * @return the context to close when the run ends
      */
+    /**
+     * The job JobRunr is running on this thread, or null when the handler was called directly (a
+     * test, or an operator tool). {@code JobRequestHandler.jobContext()} throws in that case.
+     *
+     * @return the current job context, or null
+     */
+    public static JobContext currentJob() {
+        return ThreadLocalJobContext.hasJobContext() ? ThreadLocalJobContext.getJobContext() : null;
+    }
+
     public static JobLogContext open(String exportBatchId, JobContext job) {
         MDC.put(EXPORT_BATCH_ID, exportBatchId);
         if (job != null && job != JobContext.Null && job.getJobId() != null) {

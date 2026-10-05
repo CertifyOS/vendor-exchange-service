@@ -30,7 +30,7 @@ public class FinishJob implements JobRequestHandler<FinishJobRequest> {
     @Override
     @Job(name = "finish %0")
     public void run(FinishJobRequest request) {
-        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
             if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_COMPLETED)
                     .isEmpty()) {
                 return;

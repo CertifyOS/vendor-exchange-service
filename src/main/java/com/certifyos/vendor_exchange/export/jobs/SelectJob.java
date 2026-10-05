@@ -1,14 +1,33 @@
 package com.certifyos.vendor_exchange.export.jobs;
 
+import com.certifyos.vendor_exchange.clients.ApiLayerClient;
+import com.certifyos.vendor_exchange.clients.PagedPractitioners;
+import com.certifyos.vendor_exchange.clients.PractitionerRef;
+import com.certifyos.vendor_exchange.export.batch.BatchLifecycle;
 import com.certifyos.vendor_exchange.export.batch.BatchState;
+import com.certifyos.vendor_exchange.export.batch.ExportBatch;
+import com.certifyos.vendor_exchange.export.batch.ExportNpi;
+import com.certifyos.vendor_exchange.export.batch.ExportNpiRepository;
+import com.certifyos.vendor_exchange.export.schedule.SelectionPreview;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.regex.Pattern;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.jboss.logging.Logger;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.lambdas.JobRequestHandler;
 
 /**
  * Lifecycle step 2: page api-layer for the practitioners the batch's criteria select, register
- * them, move the batch to {@code NPIS_SELECTED}. Talks to one external system, api-layer. The body
- * arrives with the selection and export subtask; the precheck and the state contract are here.
+ * them, move the batch to {@code NPIS_SELECTED} (or {@code EMPTY}). Talks to one external system,
+ * api-layer. Each page is one transaction (rows upserted, cursor saved, {@code NPIS_REGISTERED}),
+ * so a failure mid-way costs one page: the retry resumes after the saved cursor and the upsert
+ * makes a repeated page harmless. api-layer errors propagate, which is what makes JobRunr retry.
+ * A practitioner without a ten-digit NPI cannot be sent to the vendor and is skipped and counted.
  */
 @ApplicationScoped
 public class SelectJob implements JobRequestHandler<SelectJobRequest> {
@@ -16,10 +35,32 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
     /** Job name used in ids and logs. */
     public static final String NAME = "select";
 
-    private final BatchJobSupport support;
+    /** api-layer page size, from the design. */
+    static final int PAGE_SIZE = 100;
 
-    public SelectJob(BatchJobSupport support) {
+    private static final Pattern NPI = Pattern.compile("\\d{10}");
+    private static final Logger LOG = Logger.getLogger(SelectJob.class);
+
+    private final BatchJobSupport support;
+    private final BatchLifecycle lifecycle;
+    private final ExportNpiRepository npis;
+    private final ApiLayerClient apiLayer;
+    private final SelectionPreview filters;
+    private final Clock clock;
+
+    public SelectJob(
+            BatchJobSupport support,
+            BatchLifecycle lifecycle,
+            ExportNpiRepository npis,
+            @RestClient ApiLayerClient apiLayer,
+            SelectionPreview filters,
+            Clock clock) {
         this.support = support;
+        this.lifecycle = lifecycle;
+        this.npis = npis;
+        this.apiLayer = apiLayer;
+        this.filters = filters;
+        this.clock = clock;
     }
 
     /**
@@ -30,12 +71,60 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
     @Override
     @Job(name = "select %0")
     public void run(SelectJobRequest request) {
-        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
-            if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.SCHEDULED)
-                    .isEmpty()) {
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
+            Optional<ExportBatch> loaded = support.loadExpecting(NAME, request.exportBatchId(), BatchState.SCHEDULED);
+            if (loaded.isEmpty()) {
                 return;
             }
-            throw new UnsupportedOperationException("select job body is not built yet");
+            select(loaded.get());
         }
+    }
+
+    private void select(ExportBatch batch) {
+        Instant started = clock.instant();
+        String filter = filters.filterJson(batch.selection().criteria());
+        Integer cursor = batch.selection().page();
+        int page = cursor == null ? 0 : cursor + 1;
+        if (cursor != null) {
+            LOG.infof("%s resumes after page %d", batch.id(), cursor);
+        }
+        while (true) {
+            PagedPractitioners result = apiLayer.practitionerFindMany(batch.tenantId(), filter, page, PAGE_SIZE);
+            List<PractitionerRef> data = result.data();
+            List<ExportNpi> rows = new ArrayList<>(data.size());
+            int skipped = 0;
+            Instant now = clock.instant();
+            for (PractitionerRef ref : data) {
+                if (ref.npi() == null || !NPI.matcher(ref.npi()).matches()) {
+                    skipped++;
+                    continue;
+                }
+                rows.add(ExportNpi.of(batch.id(), batch.tenantId(), ref.npi(), ref.id(), now));
+            }
+            if (skipped > 0) {
+                LOG.warnf("%s page %d: %d practitioners without a ten-digit NPI skipped", batch.id(), page, skipped);
+            }
+            long inserted = lifecycle.registerPage(batch, page, rows, skipped, now);
+            LOG.infof("%s page %d: %d rows, %d new", batch.id(), page, rows.size(), inserted);
+            if (isLast(result, page)) {
+                break;
+            }
+            page++;
+        }
+        long registered = npis.countForBatch(batch.id());
+        long durationMs = clock.millis() - started.toEpochMilli();
+        if (registered == 0) {
+            lifecycle.markEmpty(batch, clock.instant());
+        } else {
+            lifecycle.completeSelection(batch, page + 1, registered, durationMs, clock.instant());
+        }
+    }
+
+    private static boolean isLast(PagedPractitioners result, int page) {
+        if (result.data().size() < PAGE_SIZE) {
+            return true;
+        }
+        Long total = result.totalCount();
+        return total != null && (long) (page + 1) * PAGE_SIZE >= total;
     }
 }

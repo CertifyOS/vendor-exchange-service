@@ -30,7 +30,7 @@ public class RequestEgressJob implements JobRequestHandler<RequestEgressJobReque
     @Override
     @Job(name = "request-egress %0")
     public void run(RequestEgressJobRequest request) {
-        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
             if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.NPIS_SELECTED)
                     .isEmpty()) {
                 return;
