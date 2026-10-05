@@ -3,6 +3,7 @@ package com.certifyos.vendor_exchange.auth;
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
 import com.certifyos.vendor_exchange.http.Problems;
 import jakarta.annotation.Priority;
+import jakarta.enterprise.inject.Instance;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
@@ -24,18 +25,21 @@ public class PubSubPushAuthFilter implements ContainerRequestFilter {
     private static final Logger LOG = Logger.getLogger(PubSubPushAuthFilter.class);
     private static final String BEARER = "Bearer ";
 
-    private final VendorExchangeConfig cfg;
+    // Instance, not the mapping itself: Quarkus REST instantiates @Provider filters during static
+    // init, before runtime config exists, and a direct VendorExchangeConfig parameter fails the boot
+    // with SRCFG00027 "Could not find a mapping". The lookup happens per request instead.
+    private final Instance<VendorExchangeConfig> cfg;
     private final PushTokenVerifier verifier;
 
-    public PubSubPushAuthFilter(VendorExchangeConfig cfg, PushTokenVerifier verifier) {
+    public PubSubPushAuthFilter(Instance<VendorExchangeConfig> cfg, PushTokenVerifier verifier) {
         this.cfg = cfg;
         this.verifier = verifier;
     }
 
     @Override
     public void filter(ContainerRequestContext rc) {
-        if (cfg.pubsub().pushServiceAccount().isEmpty()
-                || cfg.pubsub().pushAudience().isEmpty()) {
+        VendorExchangeConfig.PubSub pubsub = cfg.get().pubsub();
+        if (pubsub.pushServiceAccount().isEmpty() || pubsub.pushAudience().isEmpty()) {
             Problems.abort(rc, 401, "PUSH_NOT_CONFIGURED", "push delivery is not configured on this service");
             return;
         }

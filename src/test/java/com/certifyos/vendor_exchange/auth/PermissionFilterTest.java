@@ -2,6 +2,7 @@ package com.certifyos.vendor_exchange.auth;
 
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
 import com.certifyos.vendor_exchange.http.Problem;
+import jakarta.enterprise.inject.Instance;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ResourceInfo;
 import jakarta.ws.rs.core.Response;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+@SuppressWarnings("unchecked")
 class PermissionFilterTest {
 
     /** Stand-in resource: one method per permission and one with no annotation. */
@@ -29,16 +31,18 @@ class PermissionFilterTest {
         void open() {}
     }
 
-    private VendorExchangeConfig cfg;
+    private Instance<VendorExchangeConfig> cfg;
     private VendorExchangeConfig.Permissions permissions;
     private UserContext ctx;
     private ContainerRequestContext rc;
 
     @BeforeEach
     void before() {
-        cfg = Mockito.mock(VendorExchangeConfig.class);
+        VendorExchangeConfig mapping = Mockito.mock(VendorExchangeConfig.class);
+        cfg = Mockito.mock(Instance.class);
+        Mockito.when(cfg.get()).thenReturn(mapping);
         permissions = Mockito.mock(VendorExchangeConfig.Permissions.class);
-        Mockito.when(cfg.permissions()).thenReturn(permissions);
+        Mockito.when(mapping.permissions()).thenReturn(permissions);
         ctx = new UserContext();
         rc = Mockito.mock(ContainerRequestContext.class);
         UriInfo uri = Mockito.mock(UriInfo.class);

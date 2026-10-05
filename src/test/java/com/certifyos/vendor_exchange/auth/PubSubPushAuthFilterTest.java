@@ -2,6 +2,7 @@ package com.certifyos.vendor_exchange.auth;
 
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
 import com.certifyos.vendor_exchange.http.Problem;
+import jakarta.enterprise.inject.Instance;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
@@ -14,18 +15,21 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+@SuppressWarnings("unchecked")
 class PubSubPushAuthFilterTest {
 
-    private VendorExchangeConfig cfg;
+    private Instance<VendorExchangeConfig> cfg;
     private VendorExchangeConfig.PubSub pubsub;
     private PushTokenVerifier verifier;
     private ContainerRequestContext rc;
 
     @BeforeEach
     void before() {
-        cfg = Mockito.mock(VendorExchangeConfig.class);
+        VendorExchangeConfig mapping = Mockito.mock(VendorExchangeConfig.class);
+        cfg = Mockito.mock(Instance.class);
+        Mockito.when(cfg.get()).thenReturn(mapping);
         pubsub = Mockito.mock(VendorExchangeConfig.PubSub.class);
-        Mockito.when(cfg.pubsub()).thenReturn(pubsub);
+        Mockito.when(mapping.pubsub()).thenReturn(pubsub);
         Mockito.when(pubsub.pushServiceAccount()).thenReturn(Optional.of("pubsub-push@test.iam.gserviceaccount.com"));
         Mockito.when(pubsub.pushAudience()).thenReturn(Optional.of("https://vendor-exchange.test/internal"));
         verifier = Mockito.mock(PushTokenVerifier.class);

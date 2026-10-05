@@ -2,6 +2,7 @@ package com.certifyos.vendor_exchange.auth;
 
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
 import com.certifyos.vendor_exchange.http.Problems;
+import jakarta.enterprise.inject.Instance;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ResourceInfo;
@@ -20,10 +21,11 @@ import org.jboss.resteasy.reactive.server.ServerRequestFilter;
  */
 public class PermissionFilter {
 
-    private final VendorExchangeConfig cfg;
+    // Instance for the same reason as in PubSubPushAuthFilter: filters are built before runtime config.
+    private final Instance<VendorExchangeConfig> cfg;
     private final UserContext ctx;
 
-    public PermissionFilter(VendorExchangeConfig cfg, UserContext ctx) {
+    public PermissionFilter(Instance<VendorExchangeConfig> cfg, UserContext ctx) {
         this.cfg = cfg;
         this.ctx = ctx;
     }
@@ -39,7 +41,7 @@ public class PermissionFilter {
     public Optional<Response> filter(ContainerRequestContext rc, ResourceInfo info) {
         Method method = info.getResourceMethod();
         RequiresPermission required = method == null ? null : method.getAnnotation(RequiresPermission.class);
-        if (required == null || !cfg.permissions().enforce()) {
+        if (required == null || !cfg.get().permissions().enforce()) {
             return Optional.empty();
         }
         if (allows(ctx.permissions(), ctx.tenantId(), required.value())) {
