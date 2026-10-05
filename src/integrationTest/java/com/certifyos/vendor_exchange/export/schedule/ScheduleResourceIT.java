@@ -59,13 +59,16 @@ class ScheduleResourceIT {
     @Inject
     AuditRepository audit;
 
+    // Emails are unique to this class: the DAL lookup is cached per email for the life of the
+    // test application, which other classes with the same profile share, so a stub for an email
+    // another class already resolved is never consulted.
     @BeforeEach
     void before() {
         Mockito.when(google.idToken("test-dal-iap-client-id")).thenReturn("dal-id-token");
         Mockito.when(google.idToken("/projects/1/global/backendServices/2")).thenReturn("iap-token");
         Mockito.when(apiLayerTokens.accessToken()).thenReturn("api-layer-token");
-        WireMockDal.stubMember("ops@certifyos.com", TENANT);
-        WireMockDal.stubMember("other@certifyos.com", "org-other");
+        WireMockDal.stubMember("sched@certifyos.com", TENANT);
+        WireMockDal.stubMember("sched-other@certifyos.com", "org-sched-other");
     }
 
     private static RequestSpecification member() {
@@ -92,7 +95,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void createProvisionsTheTemplateStoresTheScheduleAndAudits() {
         stubNoTemplateThenCreate("tpl-created");
 
@@ -128,7 +131,7 @@ class ScheduleResourceIT {
         List<AuditEvent> events = audit.findForSchedule(TENANT, "create", 10);
         Assertions.assertEquals(1, events.size());
         Assertions.assertEquals(AuditEventType.SCHEDULE_CREATED, events.get(0).type());
-        Assertions.assertEquals("ops@certifyos.com", events.get(0).actor());
+        Assertions.assertEquals("sched@certifyos.com", events.get(0).actor());
         Assertions.assertEquals("tpl-created", events.get(0).detail().get("egressTemplateId"));
         Assertions.assertTrue((Boolean) events.get(0).detail().get("templateCreated"));
 
@@ -141,7 +144,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void secondCreateIsExistsAndReplaceNeedsTheCurrentVersion() {
         stubNoTemplateThenCreate("tpl-replace");
         put("replace", VALID_BODY).then().statusCode(201);
@@ -182,7 +185,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void existingTemplateIsReusedAndTwoAreAConflict() {
         WireMockUpstreams.stubFor(WireMock.get(WireMock.urlPathEqualTo(TEMPLATES))
                 .withQueryParam("search", WireMock.equalTo(TemplateProvisioner.TEMPLATE_NAME))
@@ -205,7 +208,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void operatorNamedTemplateIsVerifiedNotCreated() {
         WireMockUpstreams.stubFor(WireMock.get(WireMock.urlPathEqualTo(TEMPLATES + "/tpl-mine"))
                 .willReturn(WireMock.okJson(templateJson("tpl-mine", "ops made this", 2))));
@@ -221,7 +224,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void invalidBodiesAreRefusedWithTheirCodes() {
         put(
                         "invalid",
@@ -249,7 +252,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void disableThenEnableWithCatchUpRunsTheMissedPeriod() {
         stubNoTemplateThenCreate("tpl-toggle");
         put("toggle", VALID_BODY).then().statusCode(201);
@@ -298,7 +301,7 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "ops")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched@certifyos.com")})
     void previewCountsThroughApiLayerWithPageSizeOne() {
         WireMockUpstreams.stubFor(WireMock.get(WireMock.urlPathEqualTo("/practitioners"))
                 .withHeader("tenant-id", WireMock.equalTo(TENANT))
@@ -321,10 +324,10 @@ class ScheduleResourceIT {
 
     @Test
     @TestSecurity(user = "other")
-    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "other@certifyos.com")})
+    @JwtSecurity(claims = {@Claim(key = EMAIL, value = "sched-other@certifyos.com")})
     void pathTenantMustMatchTheHeaderTenant() {
         RestAssured.given()
-                .header("tenant-id", "org-other")
+                .header("tenant-id", "org-sched-other")
                 .contentType("application/json")
                 .body(VALID_BODY)
                 .put(BASE + "cross")
@@ -333,7 +336,7 @@ class ScheduleResourceIT {
                 .contentType(Problem.MEDIA_TYPE)
                 .body("code", Matchers.equalTo("TENANT_MISMATCH"));
         RestAssured.given()
-                .header("tenant-id", "org-other")
+                .header("tenant-id", "org-sched-other")
                 .get(BASE + "cross")
                 .then()
                 .statusCode(403)
