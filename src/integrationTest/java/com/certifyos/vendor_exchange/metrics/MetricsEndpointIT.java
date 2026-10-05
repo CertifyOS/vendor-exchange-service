@@ -76,6 +76,10 @@ class MetricsEndpointIT {
                 "vendor_export_jobs_final_failures_total{job=\"FinishJob\"}")) {
             Assertions.assertTrue(body.contains(name), "missing " + name);
         }
-        Assertions.assertFalse(body.contains("npi"), "no practitioner identifier in any label");
+        // No label carries a practitioner identifier: neither a label named npi nor a ten-digit value.
+        // (The HTTP request metrics legitimately carry the /npis route in their uri label.)
+        Assertions.assertFalse(body.contains("npi=\""), "no label named npi");
+        Assertions.assertFalse(
+                java.util.regex.Pattern.compile("=\"\\d{10}\"").matcher(body).find(), "no ten-digit label value");
     }
 }
