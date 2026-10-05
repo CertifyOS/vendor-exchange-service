@@ -20,7 +20,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.jobrunr.storage.JobNotFoundException;
+import org.jobrunr.jobs.states.StateName;
 import org.jobrunr.storage.StorageProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -123,8 +123,7 @@ class FinishJobIT {
                 .orElseThrow();
         Assertions.assertEquals(batch.file().name(), delivered.detail().get("fileName"));
         Assertions.assertEquals("EVENT", delivered.detail().get("completionSource"));
-        Assertions.assertThrows(
-                JobNotFoundException.class, () -> storage.getJobById(deadline), "pending deadline deleted");
+        Assertions.assertEquals(StateName.DELETED, storage.getJobById(deadline).getState(), "pending deadline deleted");
     }
 
     @Test
@@ -178,7 +177,7 @@ class FinishJobIT {
                 .orElseThrow();
         Assertions.assertEquals("FILE_NOT_FOUND", failed.detail().get("cause"));
         Assertions.assertNull(after.reconciliation());
-        Assertions.assertThrows(JobNotFoundException.class, () -> storage.getJobById(deadline));
+        Assertions.assertEquals(StateName.DELETED, storage.getJobById(deadline).getState());
     }
 
     @Test

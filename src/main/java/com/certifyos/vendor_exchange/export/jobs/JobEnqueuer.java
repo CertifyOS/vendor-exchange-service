@@ -50,11 +50,16 @@ public class JobEnqueuer {
         return id;
     }
 
-    /** Deletes a pending job (a deadline check that is no longer needed); unknown ids are ignored. */
+    /**
+     * Deletes a pending job (a deadline check that is no longer needed). JobRunr keeps the row in
+     * state {@code DELETED} rather than removing it; an id it has never seen is ignored. Both
+     * not-found exceptions are caught: the scheduler declares one, the storage provider throws
+     * another.
+     */
     public void delete(UUID jobId) {
         try {
             scheduler.delete(jobId);
-        } catch (JobNotFoundException ignored) {
+        } catch (JobNotFoundException | org.jobrunr.storage.JobNotFoundException ignored) {
             // already gone, which is the outcome we wanted
         }
     }

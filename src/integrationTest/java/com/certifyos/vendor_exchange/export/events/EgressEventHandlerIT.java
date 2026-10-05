@@ -31,7 +31,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import org.jobrunr.jobs.states.StateName;
-import org.jobrunr.storage.JobNotFoundException;
 import org.jobrunr.storage.StorageProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -199,8 +198,7 @@ class EgressEventHandlerIT {
         Assertions.assertEquals(
                 StateName.ENQUEUED,
                 storage.getJobById(JobIds.of(FinishJob.NAME, batch.id(), 1)).getState());
-        Assertions.assertThrows(
-                JobNotFoundException.class, () -> storage.getJobById(deadline), "deadline check deleted");
+        Assertions.assertEquals(StateName.DELETED, storage.getJobById(deadline).getState(), "deadline check deleted");
     }
 
     @Test
@@ -254,7 +252,7 @@ class EgressEventHandlerIT {
                 .orElseThrow();
         Assertions.assertEquals("EGRESS_FAILED", failed.detail().get("cause"));
         Assertions.assertEquals(1, received("m-fail"));
-        Assertions.assertThrows(JobNotFoundException.class, () -> storage.getJobById(deadline));
+        Assertions.assertEquals(StateName.DELETED, storage.getJobById(deadline).getState());
     }
 
     @Test
