@@ -47,6 +47,11 @@ public class AuditRepositoryIT {
                     AuditEvent.forBatch(AuditEventType.EXPORT_BATCH_SCHEDULED, tenantId, "candor", batch.id(), 1)
                             .occurredAt(NOW)
                             .detail("trigger", "TICK")
+                            .detail("period", "2026-10")
+                            .detail("seq", 1)
+                            .detail("cadence", "monthly")
+                            .detail("nextDueAt", NOW)
+                            .detail("scheduleVersion", 1L)
                             .build());
             return null;
         });
@@ -66,6 +71,9 @@ public class AuditRepositoryIT {
                                     AuditEventType.EXPORT_SELECTION_COMPLETED, "aud-commit", "candor", batch.id(), 1)
                             .occurredAt(NOW.plusSeconds(30))
                             .detail("practitionersSelected", 1240)
+                            .detail("criteria", "c")
+                            .detail("pages", 13)
+                            .detail("durationMs", 1)
                             .build());
             return null;
         });
@@ -90,6 +98,7 @@ public class AuditRepositoryIT {
                             AuditEvent.forBatch(
                                             AuditEventType.EXPORT_BATCH_EMPTY, "aud-rollback", "candor", batch.id(), 1)
                                     .occurredAt(NOW.plusSeconds(30))
+                                    .detail("criteria", "c")
                                     .build());
                     throw new IllegalStateException("crash before commit");
                 }));
@@ -118,6 +127,8 @@ public class AuditRepositoryIT {
                 .occurredAt(NOW.plusSeconds(13))
                 .detail("messageId", "msg-1")
                 .detail("check", 1)
+                .detail("phaseFound", "COMPLETED")
+                .detail("hoursSinceRequest", 6)
                 .build());
 
         List<AuditEvent> trail = audit.findForBatch(batch.id(), 10);
@@ -138,6 +149,10 @@ public class AuditRepositoryIT {
                 .occurredAt(when)
                 .detail("messageId", messageId)
                 .detail("phase", "COMPLETED")
+                .detail("publishTime", when.toString())
+                .detail("outputUri", null)
+                .detail("totalRecords", null)
+                .detail("totalRows", null)
                 .build();
     }
 
@@ -147,6 +162,11 @@ public class AuditRepositoryIT {
         audit.write(AuditEvent.of(AuditEventType.SCHEDULE_CREATED, "aud-sched", "candor")
                 .actor("user:ops-1")
                 .occurredAt(NOW.minusSeconds(600))
+                .detail("cadence", "monthly")
+                .detail("timezone", "UTC")
+                .detail("selection", "s")
+                .detail("egressTemplateId", "tpl")
+                .detail("nextDueAt", NOW)
                 .build());
 
         List<AuditEvent> trail = audit.findForSchedule("aud-sched", "candor", 10);

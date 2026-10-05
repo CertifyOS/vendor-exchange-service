@@ -72,6 +72,7 @@ public class AuditRepository {
      */
     public void write(ClientSession session, AuditEvent event) {
         collections.events().insertOne(session, event.toDocument());
+        log(event);
     }
 
     /**
@@ -81,6 +82,7 @@ public class AuditRepository {
      */
     public void write(AuditEvent event) {
         collections.events().insertOne(event.toDocument());
+        log(event);
     }
 
     /**
