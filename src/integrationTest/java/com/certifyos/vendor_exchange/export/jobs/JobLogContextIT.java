@@ -52,6 +52,9 @@ class JobLogContextIT {
     private final ExtHandler capture = new ExtHandler() {
         @Override
         protected void doPublish(ExtLogRecord record) {
+            // The MDC is copied into the record lazily, by whichever handler or formatter asks first,
+            // on the logging thread. Copy here, on the job's thread, before the context is closed.
+            record.copyMdc();
             records.add(record);
         }
     };
