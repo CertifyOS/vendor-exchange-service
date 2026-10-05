@@ -52,6 +52,28 @@ public interface ApiLayerClient {
             @QueryParam("size") int size);
 
     /**
+     * Lists a tenant's egress templates. {@code search} is a case-insensitive substring match on
+     * the template name.
+     *
+     * @param tenantId the tenant
+     * @param search the name substring, or null
+     * @param status {@code active}, {@code draft}, {@code inactive}, or null
+     * @param entityType {@code practitioner}, or null
+     * @param page the page number, from 0
+     * @param size the page size
+     * @return the page
+     */
+    @GET
+    @Path("/api/v1/egress-templates")
+    EgressTemplateList listEgressTemplates(
+            @HeaderParam(TENANT_HEADER) String tenantId,
+            @QueryParam("search") String search,
+            @QueryParam("status") String status,
+            @QueryParam("entityType") String entityType,
+            @QueryParam("page") int page,
+            @QueryParam("size") int size);
+
+    /**
      * Reads a tenant's egress template.
      *
      * @param tenantId the tenant

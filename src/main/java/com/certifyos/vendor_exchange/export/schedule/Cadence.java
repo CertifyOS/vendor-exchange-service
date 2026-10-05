@@ -1,7 +1,13 @@
 package com.certifyos.vendor_exchange.export.schedule;
 
 import com.certifyos.vendor_exchange.persistence.Documents;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Optional;
 import org.bson.Document;
+import org.jobrunr.scheduling.cron.CronExpression;
 
 /**
  * When a schedule is due. {@code MONTHLY} on a day 1 to 28 (so every month has the day) or a cron
@@ -26,8 +32,57 @@ public record Cadence(Type type, Integer dayOfMonth, String expression) {
         if (type == Type.MONTHLY && (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 28)) {
             throw new IllegalArgumentException("monthly cadence needs dayOfMonth 1..28, got " + dayOfMonth);
         }
-        if (type == Type.CRON && (expression == null || expression.isBlank())) {
-            throw new IllegalArgumentException("cron cadence needs an expression");
+        if (type == Type.CRON) {
+            if (expression == null || expression.isBlank()) {
+                throw new IllegalArgumentException("cron cadence needs an expression");
+            }
+            try {
+                new CronExpression(expression);
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException("cron expression is invalid: " + expression, invalid);
+            }
+        }
+    }
+
+    /**
+     * The first occurrence strictly after an instant, in the schedule's timezone. Monthly cadences
+     * occur at local midnight on their day; cron cadences follow the expression in that zone.
+     *
+     * @param after the instant to look after, usually now
+     * @param zone the schedule's timezone
+     * @return the next occurrence, UTC
+     */
+    public Instant next(Instant after, ZoneId zone) {
+        if (type == Type.MONTHLY) {
+            LocalDate day = after.atZone(zone).toLocalDate();
+            ZonedDateTime candidate = day.withDayOfMonth(dayOfMonth).atStartOfDay(zone);
+            if (!candidate.toInstant().isAfter(after)) {
+                candidate = day.plusMonths(1).withDayOfMonth(dayOfMonth).atStartOfDay(zone);
+            }
+            return candidate.toInstant();
+        }
+        return new CronExpression(expression).next(after, after, zone);
+    }
+
+    /**
+     * The most recent occurrence at or after {@code from} and not after {@code until}, for a
+     * schedule re-enabled with catch-up: the one missed period to run now.
+     *
+     * @param from when the schedule was disabled
+     * @param until now
+     * @param zone the schedule's timezone
+     * @return the occurrence, or empty when none fell in the window
+     */
+    public Optional<Instant> lastOccurrenceBetween(Instant from, Instant until, ZoneId zone) {
+        Instant last = null;
+        Instant cursor = from.minusSeconds(1);
+        while (true) {
+            Instant candidate = next(cursor, zone);
+            if (candidate.isAfter(until)) {
+                return Optional.ofNullable(last);
+            }
+            last = candidate;
+            cursor = candidate;
         }
     }
 

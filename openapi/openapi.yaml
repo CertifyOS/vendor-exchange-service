@@ -5,6 +5,46 @@ tags:
 - name: vendor-exports
 components:
   schemas:
+    CadenceRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        dayOfMonth:
+          type: integer
+          format: int32
+        expression:
+          type: string
+    ClauseRequest:
+      type: object
+      properties:
+        eq:
+          type: string
+        in:
+          type: array
+          items:
+            type: string
+        gte:
+          type: string
+        lte:
+          type: string
+    DisableRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    EnableRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        catchUp:
+          type: boolean
+    Instant:
+      type: string
+      format: date-time
+      examples:
+      - 2022-03-10T16:15:50Z
     Message:
       type: object
       properties:
@@ -18,6 +58,13 @@ components:
           type: object
           additionalProperties:
             type: string
+    PreviewRequest:
+      type: object
+      properties:
+        selection:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ClauseRequest"
     Problem:
       type: object
       properties:
@@ -41,6 +88,58 @@ components:
           $ref: "#/components/schemas/Message"
         subscription:
           type: string
+    PutRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+        cadence:
+          $ref: "#/components/schemas/CadenceRequest"
+        timezone:
+          type: string
+        selection:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ClauseRequest"
+        egressTemplateId:
+          type: string
+    ScheduleView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        vendor:
+          type: string
+        enabled:
+          type: boolean
+        cadence:
+          $ref: "#/components/schemas/CadenceRequest"
+        timezone:
+          type: string
+        selection:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ClauseRequest"
+        egressTemplateId:
+          type: string
+        nextDueAt:
+          $ref: "#/components/schemas/Instant"
+        lastBatchId:
+          type: string
+        lastRunAt:
+          $ref: "#/components/schemas/Instant"
+        disabledAt:
+          $ref: "#/components/schemas/Instant"
+        disabledReason:
+          type: string
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          $ref: "#/components/schemas/Instant"
+        updatedAt:
+          $ref: "#/components/schemas/Instant"
   securitySchemes:
     platform-token:
       description: Auth0 platform access token. The tenant-id header selects the tenant.
@@ -107,13 +206,18 @@ paths:
   /v1/vendor-exports/schedules:
     get:
       summary: List export schedules
-      description: Schedules of the tenant named by the tenant-id header. Empty until
-        schedule management is built.
+      description: Schedules of the tenant named by the tenant-id header.
       tags:
       - vendor-exports
+      parameters:
+      - name: tenantId
+        in: query
+        schema:
+          type: string
       responses:
         "400":
-          description: tenant-id header missing (TENANT_REQUIRED)
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
           content:
             application/problem+json:
               schema:
@@ -121,14 +225,353 @@ paths:
         "401":
           description: No or invalid platform token
         "403":
-          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED)\
-            \ or lacks the permission (PERMISSION_DENIED)"
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: User lookup failed (DAL_UNAVAILABLE)
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/schedules/{tenantId}/{vendor}:
+    put:
+      summary: Create or replace an export schedule
+      description: "No version in the body: create (201), or 409 SCHEDULE_EXISTS.\
+        \ With version: replace (200), or 409 VERSION_STALE. Create provisions the\
+        \ tenant's vendor template through api-layer and sets enabled; replace never\
+        \ changes enabled. Cadence or timezone changes recompute nextDueAt."
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "200":
+          description: Replaced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+      security:
+      - platform-token: []
+    get:
+      summary: Read an export schedule
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/schedules/{tenantId}/{vendor}/disable:
+    post:
+      summary: Disable an export schedule
+      description: The tick skips the schedule until enable. Reason is mandatory.
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/schedules/{tenantId}/{vendor}/enable:
+    post:
+      summary: Enable an export schedule
+      description: catchUp true sets nextDueAt to the most recent occurrence missed
+        while disabled; false to the next future one.
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnableRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/schedules/{tenantId}/{vendor}/preview:
+    post:
+      summary: Preview a selection
+      description: Runs the selection against api-layer with page size 1 and returns
+        totalCount.
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreviewRequest"
+        required: true
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
           content:
             application/problem+json:
               schema:

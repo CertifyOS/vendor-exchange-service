@@ -39,4 +39,22 @@ class SelectionCriteriaTest {
         clauses.clear();
         Assertions.assertEquals(1, criteria.clauses().size(), "the record keeps its own copy");
     }
+
+    @Test
+    void filterIsTheApiLayerShapeFieldToOperatorToValue() {
+        SelectionCriteria criteria = new SelectionCriteria(List.of(
+                new Clause("data.delegationStatus", Operator.IN, List.of("Direct", "Delegated")),
+                new Clause("credentialingStatus", Operator.EQ, List.of("Approved")),
+                new Clause("data.credentialingDueDate", Operator.LTE, List.of("2026-12-31"))));
+
+        java.util.Map<String, java.util.Map<String, Object>> filter = criteria.toFilter();
+
+        Assertions.assertEquals(
+                List.of("Direct", "Delegated"),
+                filter.get("data.delegationStatus").get("in"));
+        Assertions.assertEquals(
+                "Approved", filter.get("credentialingStatus").get("eq"), "eq carries one value, not a list");
+        Assertions.assertEquals(
+                "2026-12-31", filter.get("data.credentialingDueDate").get("lte"));
+    }
 }
