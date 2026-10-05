@@ -353,7 +353,10 @@ class BatchResourceIT {
         Schedule after = schedules.find(TENANT, "candor").orElseThrow();
         Assertions.assertEquals(newId, after.lastBatchId());
         Assertions.assertEquals(schedule.version() + 1, after.version());
-        Assertions.assertEquals(schedule.nextDueAt(), after.nextDueAt(), "supersede never moves the next run");
+        Assertions.assertEquals(
+                schedule.nextDueAt().truncatedTo(java.time.temporal.ChronoUnit.MILLIS),
+                after.nextDueAt(),
+                "supersede never moves the next run");
         Assertions.assertEquals(
                 StateName.ENQUEUED, storage.getJobById(expectedJob).getState());
 

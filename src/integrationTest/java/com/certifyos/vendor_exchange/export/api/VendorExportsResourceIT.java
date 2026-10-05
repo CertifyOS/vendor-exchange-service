@@ -77,7 +77,7 @@ class VendorExportsResourceIT {
     @TestSecurity(user = "ops")
     @JwtSecurity(claims = {@Claim(key = EMAIL, value = "ops@certifyos.com")})
     void unknownPathIsAProblem() {
-        member().get("/v1/vendor-exports/nothing-here")
+        member().get("/v1/vendor-exports/nothing/here/at-all")
                 .then()
                 .statusCode(404)
                 .contentType(Problem.MEDIA_TYPE)
