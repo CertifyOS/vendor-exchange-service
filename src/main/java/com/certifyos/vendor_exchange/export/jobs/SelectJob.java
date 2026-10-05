@@ -71,7 +71,7 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
     @Override
     @Job(name = "select %0")
     public void run(SelectJobRequest request) {
-        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
             Optional<ExportBatch> loaded = support.loadExpecting(NAME, request.exportBatchId(), BatchState.SCHEDULED);
             if (loaded.isEmpty()) {
                 return;

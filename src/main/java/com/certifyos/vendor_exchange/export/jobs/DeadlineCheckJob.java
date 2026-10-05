@@ -31,7 +31,7 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
     @Override
     @Job(name = "deadline-check %0")
     public void run(DeadlineCheckJobRequest request) {
-        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
             if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_REQUESTED)
                     .isEmpty()) {
                 return;
