@@ -7,6 +7,8 @@ import com.certifyos.vendor_exchange.persistence.Documents;
 import com.certifyos.vendor_exchange.persistence.Ids;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.ClientSession;
+import com.mongodb.client.model.Accumulators;
+import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
@@ -15,6 +17,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -149,5 +152,19 @@ public class ScheduleRepository {
             schedules.add(Schedule.fromDocument(doc));
         }
         return schedules;
+    }
+
+    /**
+     * Schedules by enabled flag, for the by-state gauges.
+     *
+     * @return true and false to their counts; a missing key means zero
+     */
+    public Map<Boolean, Long> countByEnabled() {
+        Map<Boolean, Long> counts = new java.util.HashMap<>();
+        collections
+                .schedules()
+                .aggregate(List.of(Aggregates.group("$enabled", Accumulators.sum("n", 1))))
+                .forEach(doc -> counts.put(doc.getBoolean("_id", false), Documents.longValue(doc, "n")));
+        return Map.copyOf(counts);
     }
 }

@@ -5,6 +5,8 @@ import com.certifyos.vendor_exchange.persistence.Collections;
 import com.certifyos.vendor_exchange.persistence.Documents;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.ClientSession;
+import com.mongodb.client.model.Accumulators;
+import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
@@ -13,6 +15,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.bson.Document;
@@ -181,5 +184,19 @@ public class ExportBatchRepository {
             batches.add(ExportBatch.fromDocument(doc));
         }
         return batches;
+    }
+
+    /**
+     * Batches per state, for the by-state gauges.
+     *
+     * @return state name to count; states with no rows are absent
+     */
+    public Map<String, Long> countByState() {
+        Map<String, Long> counts = new java.util.HashMap<>();
+        collections
+                .batches()
+                .aggregate(List.of(Aggregates.group("$state", Accumulators.sum("n", 1))))
+                .forEach(doc -> counts.put(doc.getString("_id"), Documents.longValue(doc, "n")));
+        return Map.copyOf(counts);
     }
 }

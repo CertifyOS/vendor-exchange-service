@@ -52,6 +52,8 @@ public class BatchJobSupport {
                     job, exportBatchId, batch.get().state(), expected);
             return Optional.empty();
         }
+        JobLogContext.tenant(batch.get().tenantId());
+        LOG.infof("%s %s: starting, attempt %d", job, exportBatchId, batch.get().attempt());
         return batch;
     }
 

@@ -6,8 +6,10 @@ import com.certifyos.vendor_exchange.audit.AuditRepository;
 import com.certifyos.vendor_exchange.config.VendorExchangeConfig;
 import com.certifyos.vendor_exchange.export.schedule.Schedule;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRepository;
+import com.certifyos.vendor_exchange.metrics.VendorExchangeMetrics;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.jboss.logging.Logger;
@@ -41,9 +43,16 @@ public class TickJob {
     private final VendorExchangeConfig cfg;
     private final ScheduleRepository schedules;
     private final AuditRepository audit;
+    private final VendorExchangeMetrics metrics;
     private final Clock clock;
 
-    public TickJob(VendorExchangeConfig cfg, ScheduleRepository schedules, AuditRepository audit, Clock clock) {
+    public TickJob(
+            VendorExchangeConfig cfg,
+            ScheduleRepository schedules,
+            AuditRepository audit,
+            VendorExchangeMetrics metrics,
+            Clock clock) {
+        this.metrics = metrics;
         this.cfg = cfg;
         this.schedules = schedules;
         this.audit = audit;
@@ -72,6 +81,7 @@ public class TickJob {
         List<TickResult.Created> created = List.of();
         long durationMs = clock.millis() - started.toEpochMilli();
         TickResult result = new TickResult(tickId, due.size(), created, 0, durationMs);
+        metrics.tick(due.size(), Duration.ofMillis(durationMs));
         audit.write(AuditEvent.of(AuditEventType.EXPORT_TICK_COMPLETED, null, null)
                 .occurredAt(clock.instant())
                 .detail("tickId", tickId)

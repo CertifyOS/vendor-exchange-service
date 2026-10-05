@@ -30,10 +30,12 @@ public class RequestEgressJob implements JobRequestHandler<RequestEgressJobReque
     @Override
     @Job(name = "request-egress %0")
     public void run(RequestEgressJobRequest request) {
-        String exportBatchId = request.exportBatchId();
-        if (support.loadExpecting(NAME, exportBatchId, BatchState.NPIS_SELECTED).isEmpty()) {
-            return;
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+            if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.NPIS_SELECTED)
+                    .isEmpty()) {
+                return;
+            }
+            throw new UnsupportedOperationException("request-egress job body is not built yet");
         }
-        throw new UnsupportedOperationException("request-egress job body is not built yet");
     }
 }

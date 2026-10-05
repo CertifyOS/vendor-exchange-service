@@ -6,6 +6,7 @@ import com.certifyos.vendor_exchange.audit.AuditRepository;
 import com.certifyos.vendor_exchange.export.batch.BatchState;
 import com.certifyos.vendor_exchange.export.batch.ExportBatch;
 import com.certifyos.vendor_exchange.export.batch.ExportBatchRepository;
+import com.certifyos.vendor_exchange.metrics.VendorExchangeMetrics;
 import com.certifyos.vendor_exchange.persistence.Transactions;
 import com.mongodb.client.model.Updates;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -49,21 +50,34 @@ public class BatchFinalFailureFilter implements ApplyStateFilter {
     private final ExportBatchRepository batches;
     private final AuditRepository audit;
     private final Transactions transactions;
+    private final VendorExchangeMetrics metrics;
     private final Clock clock;
 
     public BatchFinalFailureFilter(
-            ExportBatchRepository batches, AuditRepository audit, Transactions transactions, Clock clock) {
+            ExportBatchRepository batches,
+            AuditRepository audit,
+            Transactions transactions,
+            VendorExchangeMetrics metrics,
+            Clock clock) {
         this.batches = batches;
         this.audit = audit;
         this.transactions = transactions;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
     @Override
     public void onStateApplied(Job job, JobState oldState, JobState newState) {
-        if (!(newState instanceof FailedState failed) || job.getState() != StateName.FAILED) {
+        if (!(newState instanceof FailedState failed)) {
             return;
         }
+        String jobName = jobNameOf(job);
+        if (job.getState() != StateName.FAILED) {
+            // A failed attempt with retries left: JobRunr has already elected the next SCHEDULED state.
+            metrics.jobRetry(jobName);
+            return;
+        }
+        metrics.jobFinalFailure(jobName);
         ExportBatch.FailedStep step = STEP_BY_JOB_CLASS.get(job.getJobDetails().getClassName());
         if (step == null) {
             return;
@@ -125,6 +139,12 @@ public class BatchFinalFailureFilter implements ApplyStateFilter {
         });
         LOG.warnf(
                 "batch %s marked FAILED at step %s after %d attempts: %s", exportBatchId, step, jobAttempts, lastError);
+    }
+
+    /** The handler's simple class name, the {@code job} tag of the retry and final-failure counters. */
+    static String jobNameOf(Job job) {
+        String className = job.getJobDetails().getClassName();
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     static String batchIdOf(Job job) {

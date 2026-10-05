@@ -31,10 +31,12 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
     @Override
     @Job(name = "deadline-check %0")
     public void run(DeadlineCheckJobRequest request) {
-        if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_REQUESTED)
-                .isEmpty()) {
-            return;
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+            if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_REQUESTED)
+                    .isEmpty()) {
+                return;
+            }
+            throw new UnsupportedOperationException("deadline-check job body is not built yet (" + request + ")");
         }
-        throw new UnsupportedOperationException("deadline-check job body is not built yet (" + request + ")");
     }
 }

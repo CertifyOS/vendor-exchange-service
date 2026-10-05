@@ -30,10 +30,12 @@ public class FinishJob implements JobRequestHandler<FinishJobRequest> {
     @Override
     @Job(name = "finish %0")
     public void run(FinishJobRequest request) {
-        if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_COMPLETED)
-                .isEmpty()) {
-            return;
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+            if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_COMPLETED)
+                    .isEmpty()) {
+                return;
+            }
+            throw new UnsupportedOperationException("finish job body is not built yet");
         }
-        throw new UnsupportedOperationException("finish job body is not built yet");
     }
 }

@@ -30,10 +30,12 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
     @Override
     @Job(name = "select %0")
     public void run(SelectJobRequest request) {
-        String exportBatchId = request.exportBatchId();
-        if (support.loadExpecting(NAME, exportBatchId, BatchState.SCHEDULED).isEmpty()) {
-            return;
+        try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), jobContext())) {
+            if (support.loadExpecting(NAME, request.exportBatchId(), BatchState.SCHEDULED)
+                    .isEmpty()) {
+                return;
+            }
+            throw new UnsupportedOperationException("select job body is not built yet");
         }
-        throw new UnsupportedOperationException("select job body is not built yet");
     }
 }
