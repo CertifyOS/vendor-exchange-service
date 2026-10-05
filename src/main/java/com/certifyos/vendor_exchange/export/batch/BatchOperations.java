@@ -32,6 +32,10 @@ import org.jboss.logging.Logger;
 public class BatchOperations {
 
     static final int LIST_LIMIT = 100;
+
+    /** The most audit events one read returns; a batch writes well under this over its whole life. */
+    public static final int TRAIL_LIMIT = 500;
+
     private static final Logger LOG = Logger.getLogger(BatchOperations.class);
 
     private final ExportBatchRepository batches;
@@ -95,6 +99,16 @@ public class BatchOperations {
             }
         }
         return batches.findForTenant(tenantId, period == null || period.isBlank() ? null : period, LIST_LIMIT);
+    }
+
+    /**
+     * A batch's audit trail in the order it was written.
+     *
+     * @param batch the batch, from {@link #require}
+     * @return the events, oldest first, at most {@link #TRAIL_LIMIT}
+     */
+    public List<AuditEvent> trail(ExportBatch batch) {
+        return audit.trailForBatch(batch.id(), TRAIL_LIMIT);
     }
 
     /**

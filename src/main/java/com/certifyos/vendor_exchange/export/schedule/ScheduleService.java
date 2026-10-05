@@ -33,6 +33,10 @@ import org.jboss.logging.Logger;
 public class ScheduleService {
 
     static final int LIST_LIMIT = 100;
+
+    /** The most schedule events one read returns, newest first. */
+    public static final int TRAIL_LIMIT = 200;
+
     private static final Logger LOG = Logger.getLogger(ScheduleService.class);
 
     private final ScheduleRepository schedules;
@@ -324,6 +328,18 @@ public class ScheduleService {
                 .find(tenantId, vendor)
                 .orElseThrow(() -> ProblemException.notFound(
                         "SCHEDULE_NOT_FOUND", "no schedule " + Ids.scheduleId(tenantId, vendor)));
+    }
+
+    /**
+     * A schedule's own audit events (creation, changes, enable and disable, run-now), newest first.
+     *
+     * @param tenantId the tenant
+     * @param vendor the vendor
+     * @return the events, at most {@link #TRAIL_LIMIT}
+     */
+    public List<AuditEvent> trail(String tenantId, String vendor) {
+        require(tenantId, vendor);
+        return audit.trailForSchedule(tenantId, vendor, TRAIL_LIMIT);
     }
 
     /** A tenant's schedules. */

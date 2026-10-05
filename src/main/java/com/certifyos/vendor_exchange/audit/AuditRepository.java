@@ -138,6 +138,48 @@ public class AuditRepository {
         return events;
     }
 
+    /**
+     * A batch's whole trail in the order it was written: the natural {@code _id} order, which
+     * keeps events that share an {@code occurredAt} (one transaction) in write order.
+     *
+     * @param exportBatchId the batch
+     * @param limit the most rows to return
+     * @return the events, oldest first
+     */
+    public List<AuditEvent> trailForBatch(String exportBatchId, int limit) {
+        List<AuditEvent> events = new ArrayList<>();
+        for (Document doc : collections
+                .events()
+                .find(Filters.eq("exportBatchId", exportBatchId))
+                .sort(Sorts.ascending("_id"))
+                .limit(limit)) {
+            events.add(AuditEvent.fromDocument(doc));
+        }
+        return events;
+    }
+
+    /**
+     * A schedule's own events (those with no batch), newest first.
+     *
+     * @param tenantId the tenant
+     * @param vendor the vendor
+     * @param limit the most rows to return
+     * @return the events
+     */
+    public List<AuditEvent> trailForSchedule(String tenantId, String vendor, int limit) {
+        Bson filter = Filters.and(
+                Filters.eq("tenantId", tenantId), Filters.eq("vendor", vendor), Filters.exists("exportBatchId", false));
+        List<AuditEvent> events = new ArrayList<>();
+        for (Document doc : collections
+                .events()
+                .find(filter)
+                .sort(Sorts.orderBy(Sorts.descending("occurredAt"), Sorts.descending("_id")))
+                .limit(limit)) {
+            events.add(AuditEvent.fromDocument(doc));
+        }
+        return events;
+    }
+
     private List<AuditEvent> toList(Bson filter, int limit) {
         List<AuditEvent> events = new ArrayList<>();
         for (Document doc : collections
