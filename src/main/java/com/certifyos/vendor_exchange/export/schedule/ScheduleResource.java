@@ -3,6 +3,7 @@ package com.certifyos.vendor_exchange.export.schedule;
 import com.certifyos.vendor_exchange.auth.Permission;
 import com.certifyos.vendor_exchange.auth.RequiresPermission;
 import com.certifyos.vendor_exchange.auth.UserContext;
+import com.certifyos.vendor_exchange.export.api.AuditViews.EventView;
 import com.certifyos.vendor_exchange.export.api.Items;
 import com.certifyos.vendor_exchange.export.batch.BatchLifecycle;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.DisableRequest;
@@ -110,6 +111,26 @@ public class ScheduleResource {
     public ScheduleView get(@PathParam("tenantId") String tenantId, @PathParam("vendor") String vendor) {
         sameTenant(tenantId);
         return ScheduleView.of(service.require(tenantId, vendor));
+    }
+
+    /**
+     * A schedule's own audit events.
+     *
+     * @param tenantId the tenant
+     * @param vendor the vendor
+     * @return creation, changes, enable, disable and run-now events, newest first
+     */
+    @GET
+    @Path("/{tenantId}/{vendor}/events")
+    @RequiresPermission(Permission.READ)
+    @Operation(
+            summary = "Read a schedule's audit trail",
+            description = "The schedule-scoped events (no batch id), newest first, at most 200. A batch's own events "
+                    + "are under /v1/vendor-exports/{exportBatchId}/events.")
+    public Items<EventView> events(@PathParam("tenantId") String tenantId, @PathParam("vendor") String vendor) {
+        sameTenant(tenantId);
+        return new Items<>(
+                service.trail(tenantId, vendor).stream().map(EventView::of).toList());
     }
 
     /**

@@ -309,6 +309,22 @@ class ExportLaneIT {
                 .body("reconciliation.match", Matchers.equalTo(true))
                 .body("egress", Matchers.not(Matchers.hasKey("deadlineJobId")));
         member().get(BATCHES + batchId + "/npis").then().statusCode(200).body("items.size()", Matchers.equalTo(3));
+        member().get(BATCHES + batchId + "/events")
+                .then()
+                .statusCode(200)
+                .body("items.size()", Matchers.equalTo(8))
+                .body("items[0].type", Matchers.equalTo("EXPORT_BATCH_SCHEDULED"))
+                .body("items[0].actor", Matchers.equalTo("lane@certifyos.com"))
+                .body("items[0].detail.trigger", Matchers.equalTo("MANUAL"))
+                .body("items[7].type", Matchers.equalTo("EXPORT_BATCH_DELIVERED"))
+                .body(
+                        "items[7].detail.fileName",
+                        Matchers.equalTo(delivered.file().name()));
+        member().get(SCHEDULES + "candor/events")
+                .then()
+                .statusCode(200)
+                .body("items.type", Matchers.hasItems("SCHEDULE_RUN_NOW", "SCHEDULE_CREATED"))
+                .body("items.type", Matchers.not(Matchers.hasItem("EXPORT_BATCH_SCHEDULED")));
     }
 
     @Test

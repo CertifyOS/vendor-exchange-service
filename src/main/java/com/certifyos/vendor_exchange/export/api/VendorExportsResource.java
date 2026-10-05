@@ -3,6 +3,7 @@ package com.certifyos.vendor_exchange.export.api;
 import com.certifyos.vendor_exchange.auth.Permission;
 import com.certifyos.vendor_exchange.auth.RequiresPermission;
 import com.certifyos.vendor_exchange.auth.UserContext;
+import com.certifyos.vendor_exchange.export.api.AuditViews.EventView;
 import com.certifyos.vendor_exchange.export.api.BatchViews.BatchView;
 import com.certifyos.vendor_exchange.export.api.BatchViews.NpiPage;
 import com.certifyos.vendor_exchange.export.api.BatchViews.NpiView;
@@ -146,6 +147,24 @@ public class VendorExportsResource {
         List<ExportNpi> page = more ? rows.subList(0, size) : rows;
         String nextAfter = more ? page.get(page.size() - 1).npi() : null;
         return new NpiPage(page.stream().map(NpiView::of).toList(), nextAfter);
+    }
+
+    /**
+     * A batch's audit trail.
+     *
+     * @param exportBatchId the batch
+     * @return the events in the order they were written
+     */
+    @GET
+    @Path("/{exportBatchId}/events")
+    @RequiresPermission(Permission.READ)
+    @Operation(
+            summary = "Read a batch's audit trail",
+            description = "Every audit event written for the batch, oldest first, at most 500: the design's envelope "
+                    + "with its detail. jobId links an event to the JobRunr dashboard entry.")
+    public Items<EventView> events(@PathParam("exportBatchId") String exportBatchId) {
+        ExportBatch batch = operations.require(ctx.tenantId(), exportBatchId);
+        return new Items<>(operations.trail(batch).stream().map(EventView::of).toList());
     }
 
     /**

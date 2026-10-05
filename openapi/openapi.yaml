@@ -568,6 +568,64 @@ paths:
                 $ref: "#/components/schemas/Problem"
       security:
       - platform-token: []
+  /v1/vendor-exports/schedules/{tenantId}/{vendor}/events:
+    get:
+      summary: Read a schedule's audit trail
+      description: "The schedule-scoped events (no batch id), newest first, at most\
+        \ 200. A batch's own events are under /v1/vendor-exports/{exportBatchId}/events."
+      tags:
+      - vendor-exports
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: vendor
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "400":
+          description: "Invalid request (SELECTION_INVALID, CADENCE_INVALID, TIMEZONE_INVALID,\
+            \ INVALID_REQUEST, TEMPLATE_NOT_FOUND, TEMPLATE_WRONG_ENTITY, REASON_REQUIRED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant, lacks the permission,\
+            \ or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such schedule (SCHEDULE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Exists, stale version, already enabled or disabled, ambiguous\
+            \ template (SCHEDULE_EXISTS, VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED,\
+            \ TEMPLATE_AMBIGUOUS, BATCH_EXISTS, SCHEDULE_DISABLED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: "DAL or api-layer unavailable or not configured (DAL_UNAVAILABLE,\
+            \ API_LAYER_UNAVAILABLE, API_LAYER_NOT_CONFIGURED)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
   /v1/vendor-exports/schedules/{tenantId}/{vendor}/preview:
     post:
       summary: Preview a selection
@@ -732,6 +790,58 @@ paths:
     get:
       summary: Read an export batch
       description: The batch document minus internal job ids.
+      tags:
+      - vendor-exports
+      parameters:
+      - name: exportBatchId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "400":
+          description: "Invalid request (TENANT_REQUIRED, PERIOD_INVALID, REASON_REQUIRED,\
+            \ INVALID_REQUEST)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: No or invalid platform token
+        "403":
+          description: "Caller holds no role in the tenant (TENANT_FORBIDDEN, TENANT_UNRESOLVED),\
+            \ lacks the permission (PERMISSION_DENIED) or named another tenant (TENANT_MISMATCH)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: No such batch in the caller's tenant (BATCH_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "Not in a state that allows the write (RETRY_NOT_ALLOWED, SUPERSEDE_NOT_ALLOWED,\
+            \ BATCH_EXISTS, VERSION_STALE)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: User lookup failed (DAL_UNAVAILABLE)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+      - platform-token: []
+  /v1/vendor-exports/{exportBatchId}/events:
+    get:
+      summary: Read a batch's audit trail
+      description: "Every audit event written for the batch, oldest first, at most\
+        \ 500: the design's envelope with its detail. jobId links an event to the\
+        \ JobRunr dashboard entry."
       tags:
       - vendor-exports
       parameters:
