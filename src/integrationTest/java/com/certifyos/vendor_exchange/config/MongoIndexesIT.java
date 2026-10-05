@@ -95,4 +95,19 @@ public class MongoIndexesIT {
         indexes.createAll();
         Assertions.assertEquals(before, byName(collections.batches()).size());
     }
+
+    @Test
+    void noIndexExpiresDocuments() {
+        // Seven-year retention (design, Data model): the one way Mongo deletes on its own is a TTL
+        // index, so none of the four service collections may carry expireAfterSeconds.
+        for (var collection : java.util.List.of(
+                collections.schedules(), collections.batches(), collections.npis(), collections.events())) {
+            for (Document index : collection.listIndexes()) {
+                Assertions.assertFalse(
+                        index.containsKey("expireAfterSeconds"),
+                        collection.getNamespace().getCollectionName() + " index " + index.getString("name")
+                                + " is a TTL index");
+            }
+        }
+    }
 }

@@ -51,7 +51,10 @@ import org.jobrunr.jobs.states.StateName;
 import org.jobrunr.storage.StorageProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
@@ -68,6 +71,7 @@ import org.mockito.Mockito;
 @QuarkusTestResource(WireMockDal.class)
 @QuarkusTestResource(WireMockUpstreams.class)
 @TestProfile(WorkerTestProfile.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ExportLaneIT {
 
     static final String EMAIL = UserContextFilter.EMAIL_CLAIM;
@@ -219,6 +223,7 @@ class ExportLaneIT {
     }
 
     @Test
+    @Order(1)
     @TestSecurity(user = "ops")
     @JwtSecurity(claims = {@Claim(key = EMAIL, value = "lane@certifyos.com")})
     void runNowToDeliveredThroughTheCompletionEvent() {
@@ -328,6 +333,7 @@ class ExportLaneIT {
     }
 
     @Test
+    @Order(2)
     @TestSecurity(user = "ops")
     @JwtSecurity(claims = {@Claim(key = EMAIL, value = "lane@certifyos.com")})
     void withTheEventWithheldTheDeadlineCheckDelivers() {
@@ -363,6 +369,7 @@ class ExportLaneIT {
     }
 
     @Test
+    @Order(3)
     @TestSecurity(user = "ops")
     @JwtSecurity(claims = {@Claim(key = EMAIL, value = "lane@certifyos.com")})
     void aFailedFirstAttemptIsRetriedUnderR2WithThePriorCancelled() {
@@ -428,5 +435,36 @@ class ExportLaneIT {
                         AuditEventType.NPIS_RECONCILED,
                         AuditEventType.EXPORT_BATCH_DELIVERED),
                 trail(batchId));
+    }
+
+    @Test
+    @Order(4)
+    void theMetricsEndpointReflectsTheThreeScenarios() {
+        // The design's names as Prometheus renders them, with the labels and the values the three
+        // scenarios produced: three batches, nine practitioners over three pages, two completions by
+        // event and one by the deadline path, one egress failure, no count mismatch. Tags render in
+        // alphabetical order. The four names the lane did not touch here (event.rejected,
+        // reconcile.mismatch, jobs.retries, jobs.final_failures) are covered by MetricsEndpointIT.
+        String body =
+                RestAssured.get("/q/metrics").then().statusCode(200).extract().asString();
+        for (String expected : List.of(
+                "vendor_export_tick_duration_seconds",
+                "vendor_export_tick_schedules_due",
+                "vendor_export_schedules_by_state{state=\"ENABLED\"}",
+                "vendor_export_batches_by_state{state=\"DELIVERED\"}",
+                "vendor_export_batches_created_total{tenant=\"" + TENANT + "\",vendor=\"candor\"} 1.0",
+                "vendor_export_batches_created_total{tenant=\"" + TENANT + "\",vendor=\"lane-deadline\"} 1.0",
+                "vendor_export_batches_created_total{tenant=\"" + TENANT + "\",vendor=\"lane-retry\"} 1.0",
+                "vendor_export_selection_practitioners{tenant=\"" + TENANT + "\",vendor=\"candor\"} 3.0",
+                "vendor_export_selection_pages_total{tenant=\"" + TENANT + "\"} 3.0",
+                "vendor_export_egress_wait_seconds{tenant=\"" + TENANT + "\"}",
+                "vendor_export_egress_failed_total{reason=\"EGRESS_FAILED\",tenant=\"" + TENANT + "\"} 1.0",
+                "vendor_export_completion_source_total{source=\"EVENT\"} 2.0",
+                "vendor_export_completion_source_total{source=\"DEADLINE\"} 1.0")) {
+            Assertions.assertTrue(body.contains(expected), "missing or wrong: " + expected);
+        }
+        Assertions.assertFalse(
+                body.contains("vendor_export_reconcile_mismatch_total{tenant=\"" + TENANT + "\"}"), "no mismatch ran");
+        Assertions.assertFalse(body.contains("npi=\""), "no label named npi");
     }
 }
