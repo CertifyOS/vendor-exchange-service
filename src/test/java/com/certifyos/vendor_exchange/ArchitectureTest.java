@@ -3,7 +3,9 @@ package com.certifyos.vendor_exchange;
 import com.certifyos.vendor_exchange.auth.RequiresPermission;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaCall;
 import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
+import com.tngtech.archunit.core.domain.properties.HasName;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -133,5 +135,31 @@ class ArchitectureTest {
             .areAnnotatedWith(Operation.class)
             .should()
             .beAnnotatedWith(RequiresPermission.class)
+            .allowEmptyShould(true);
+
+    /** The MongoCollection methods that change or remove documents. */
+    static final String MONGO_WRITES = String.join(
+            "|",
+            "updateOne",
+            "updateMany",
+            "replaceOne",
+            "deleteOne",
+            "deleteMany",
+            "findOneAndUpdate",
+            "findOneAndReplace",
+            "findOneAndDelete",
+            "drop",
+            "bulkWrite");
+
+    /**
+     * The audit collection is append-only (design, Audit trail): the repository may insert and read,
+     * never update, replace or delete. Retention is a platform matter; nothing in code shortens it.
+     */
+    @ArchTest
+    static final ArchRule auditIsAppendOnly = ArchRuleDefinition.noClasses()
+            .that()
+            .resideInAPackage("..audit..")
+            .should()
+            .callMethodWhere(JavaCall.Predicates.target(HasName.Predicates.nameMatching(MONGO_WRITES)))
             .allowEmptyShould(true);
 }
