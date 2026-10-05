@@ -113,8 +113,9 @@ public class JobRunrGateIT {
         UUID again = enqueuer.select(batch.id(), 1);
         Assertions.assertEquals(jobId, again, "deterministic id, second enqueue is a no-op");
 
-        // The stub body throws; with job-retries=1 in the test profile the job fails, is retried once
-        // about 3 s later, fails again and stays FAILED. The filter then moves the batch.
+        // The worker profile has no api-layer machine client, so the select job's first api-layer call
+        // throws ApiLayerNotConfiguredException; with job-retries=1 in the test profile the job fails,
+        // is retried once about 3 s later, fails again and stays FAILED. The filter then moves the batch.
         Awaitility.await()
                 .atMost(Duration.ofSeconds(90))
                 .until(() -> storage.getJobById(jobId).getState() == StateName.FAILED);
@@ -124,7 +125,7 @@ public class JobRunrGateIT {
 
         ExportBatch failed = batches.find(batch.id()).orElseThrow();
         Assertions.assertEquals(ExportBatch.FailedStep.SELECT, failed.failedStep());
-        Assertions.assertTrue(failed.lastError().contains("UnsupportedOperationException"), failed.lastError());
+        Assertions.assertTrue(failed.lastError().contains("ApiLayerNotConfiguredException"), failed.lastError());
         Assertions.assertEquals(2L, failed.version());
 
         List<AuditEvent> trail = audit.findForBatch(batch.id(), 10);
