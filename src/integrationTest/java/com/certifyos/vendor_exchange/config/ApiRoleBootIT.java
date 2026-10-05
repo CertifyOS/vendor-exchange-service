@@ -99,11 +99,13 @@ public class ApiRoleBootIT {
 
     @Test
     void readinessReportsMongo() {
+        // 503 overall: the api-layer check is DOWN by design while the machine client is absent
+        // (ApiLayerReadinessIT). The Mongo check itself is present and UP.
         RestAssured.get("/q/health/ready")
                 .then()
-                .statusCode(200)
+                .statusCode(503)
                 .body(
-                        "checks.name",
-                        org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsStringIgnoringCase("mongo")));
+                        "checks.find { it.name.toLowerCase().contains('mongo') }.status",
+                        org.hamcrest.Matchers.equalTo("UP"));
     }
 }
