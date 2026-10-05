@@ -61,7 +61,9 @@ class VendorExportsResourceIT {
                 .statusCode(200)
                 .body("tickId", Matchers.notNullValue())
                 .body("schedulesDue", Matchers.greaterThanOrEqualTo(0))
-                .body("batchesCreated", Matchers.greaterThanOrEqualTo(0));
+                .body("batchesCreated", Matchers.instanceOf(java.util.List.class))
+                .body("skippedAlreadyExists", Matchers.greaterThanOrEqualTo(0))
+                .body("durationMs", Matchers.greaterThanOrEqualTo(0));
     }
 
     @Test

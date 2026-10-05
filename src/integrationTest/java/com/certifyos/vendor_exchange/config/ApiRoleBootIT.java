@@ -49,8 +49,12 @@ public class ApiRoleBootIT {
         // string, which the mapping must read as Optional.empty().
         Assertions.assertTrue(cfg.apiLayer().clientId().isEmpty());
         Assertions.assertTrue(cfg.apiLayer().clientSecret().isEmpty());
-        Assertions.assertTrue(cfg.pubsub().pushServiceAccount().isEmpty());
-        Assertions.assertTrue(cfg.pubsub().pushAudience().isEmpty());
+        // The push keys are the same kind of swap-in, but the test profile sets them so the push
+        // filter's verifier path runs in EgressEventResourceIT; a set value reads as present.
+        Assertions.assertEquals(
+                "pubsub-push@test.iam.gserviceaccount.com",
+                cfg.pubsub().pushServiceAccount().orElseThrow());
+        Assertions.assertTrue(cfg.pubsub().pushAudience().isPresent());
     }
 
     @Test
