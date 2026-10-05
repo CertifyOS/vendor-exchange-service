@@ -1,5 +1,6 @@
 package com.certifyos.vendor_exchange.export.schedule;
 
+import com.certifyos.vendor_exchange.audit.Actors;
 import com.certifyos.vendor_exchange.persistence.AlreadyExistsException;
 import com.certifyos.vendor_exchange.persistence.Collections;
 import com.certifyos.vendor_exchange.persistence.Documents;
@@ -25,9 +26,6 @@ import org.bson.conversions.Bson;
  */
 @ApplicationScoped
 public class ScheduleRepository {
-
-    /** Actor recorded on system writes (the tick). */
-    public static final String SYSTEM_ACTOR = "system:vendor-export";
 
     private final Collections collections;
 
@@ -123,7 +121,7 @@ public class ScheduleRepository {
                 Updates.set("nextDueAt", nextDueAt),
                 Updates.set("lastBatchId", lastBatchId),
                 Updates.set("lastRunAt", now),
-                Updates.set("updatedBy", SYSTEM_ACTOR),
+                Updates.set("updatedBy", Actors.SYSTEM),
                 Updates.set("updatedAt", now),
                 Updates.inc("version", 1L));
         return update(session, scheduleId, expectedVersion, update);

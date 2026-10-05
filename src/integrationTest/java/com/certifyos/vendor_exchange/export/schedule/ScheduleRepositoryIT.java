@@ -124,7 +124,7 @@ public class ScheduleRepositoryIT {
         Assertions.assertEquals(2L, after.version());
         Assertions.assertEquals(next, after.nextDueAt());
         Assertions.assertEquals("sch-advance-candor-2026-10-001", after.lastBatchId());
-        Assertions.assertEquals(ScheduleRepository.SYSTEM_ACTOR, after.updatedBy());
+        Assertions.assertEquals(com.certifyos.vendor_exchange.audit.Actors.SYSTEM, after.updatedBy());
         Assertions.assertTrue(schedules.findDue(NOW, 100).stream()
                 .noneMatch(found -> found.id().equals(schedule.id())));
     }
