@@ -67,6 +67,7 @@ class ScheduleResourceIT {
         Mockito.when(google.idToken("test-dal-iap-client-id")).thenReturn("dal-id-token");
         Mockito.when(google.idToken("/projects/1/global/backendServices/2")).thenReturn("iap-token");
         Mockito.when(apiLayerTokens.accessToken()).thenReturn("api-layer-token");
+        WireMockUpstreams.resetRequests();
         WireMockDal.stubMember("sched@certifyos.com", TENANT);
         WireMockDal.stubMember("sched-other@certifyos.com", "org-sched-other");
     }
