@@ -2,14 +2,11 @@ package com.certifyos.vendor_exchange.export.events;
 
 import com.certifyos.vendor_exchange.auth.PubSubPush;
 import com.certifyos.vendor_exchange.http.Problem;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.io.IOException;
-import java.util.Base64;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -31,10 +28,10 @@ public class EgressEventResource {
 
     private static final Logger LOG = Logger.getLogger(EgressEventResource.class);
 
-    private final ObjectMapper mapper;
+    private final EgressEventHandler handler;
 
-    public EgressEventResource(ObjectMapper mapper) {
-        this.mapper = mapper;
+    public EgressEventResource(EgressEventHandler handler) {
+        this.handler = handler;
     }
 
     /**
@@ -60,18 +57,8 @@ public class EgressEventResource {
             LOG.warn("egress event push without message data, acknowledged and dropped");
             return Response.noContent().build();
         }
-        String messageId = envelope.message().messageId();
-        EgressEvent event;
-        try {
-            event = mapper.readValue(
-                    Base64.getDecoder().decode(envelope.message().data()), EgressEvent.class);
-        } catch (IOException | IllegalArgumentException malformed) {
-            LOG.warnf("egress event %s malformed, acknowledged and dropped: %s", messageId, malformed.getMessage());
-            return Response.noContent().build();
-        }
-        LOG.infof(
-                "egress event received messageId=%s type=%s tenant=%s correlationId=%s phase=%s",
-                messageId, event.type(), event.tenantId(), event.correlationId(), event.phase());
+        EgressEventHandler.Outcome outcome = handler.handle(envelope.message());
+        LOG.infof("egress event %s: %s", envelope.message().messageId(), outcome);
         return Response.noContent().build();
     }
 }
