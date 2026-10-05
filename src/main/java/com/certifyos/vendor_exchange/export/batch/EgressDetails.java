@@ -44,7 +44,9 @@ public record EgressDetails(
     /** How the service learned egress finished. */
     public enum CompletionSource {
         EVENT,
-        DEADLINE
+        DEADLINE,
+        /** A retry found the prior attempt's complete file already in place. */
+        PRIOR_ATTEMPT
     }
 
     /**
