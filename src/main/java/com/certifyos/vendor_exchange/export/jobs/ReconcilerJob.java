@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.jboss.logging.Logger;
+import org.jobrunr.jobs.annotations.Recurring;
 
 /**
  * Lifecycle step 7, the hourly reconciler: a batch row written but never enqueued (a crash between
@@ -41,6 +42,12 @@ public class ReconcilerJob {
         this.cfg = cfg;
         this.batches = batches;
         this.clock = clock;
+    }
+
+    /** The recurring entry point: every hour on the hour, registered by id at startup. */
+    @Recurring(id = RECURRING_ID, cron = CRON, zoneId = "UTC")
+    public void reconcile() {
+        run();
     }
 
     /**

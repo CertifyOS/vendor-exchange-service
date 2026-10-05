@@ -11,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.jboss.logging.Logger;
+import org.jobrunr.jobs.annotations.Recurring;
 
 /**
  * Lifecycle step 1: the daily tick. One indexed query for due schedules, then one transaction per
@@ -18,6 +19,10 @@ import org.jboss.logging.Logger;
  * job each. Calls no other service. This step wires the recurring job, the query and the
  * {@code EXPORT_TICK_COMPLETED} fact; the per-row transaction arrives with the selection and export
  * subtask, so {@code batchesCreated} is empty until then.
+ *
+ * <p>The recurring registration is the {@code @Recurring} annotation on {@link #tick()}: the Quarkus
+ * extension finds it at build time and registers it by id at startup, idempotently, with no lambda
+ * for JobRunr to analyse (a no-capture IoC lambda in a CDI bean fails its bytecode analysis).
  */
 @ApplicationScoped
 public class TickJob {
@@ -43,6 +48,12 @@ public class TickJob {
         this.schedules = schedules;
         this.audit = audit;
         this.clock = clock;
+    }
+
+    /** The recurring entry point: 06:00 UTC daily, registered by id at startup. */
+    @Recurring(id = RECURRING_ID, cron = CRON, zoneId = "UTC")
+    public void tick() {
+        run();
     }
 
     /**
