@@ -1,8 +1,10 @@
 package com.certifyos.vendor_exchange.export.schedule;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.bson.Document;
 
 /**
@@ -67,6 +69,23 @@ public record SelectionCriteria(List<Clause> clauses) {
             throw new IllegalArgumentException("selection needs at least one clause");
         }
         clauses = List.copyOf(clauses);
+    }
+
+    /**
+     * api-layer's {@code filter} shape: {@code { "<field>": { "<op>": value } }}, one value for eq,
+     * gte and lte, a list for in. The caller serialises it to JSON.
+     *
+     * @return the filter, fields in clause order
+     */
+    public Map<String, Map<String, Object>> toFilter() {
+        Map<String, Map<String, Object>> filter = new LinkedHashMap<>();
+        for (Clause clause : clauses) {
+            Object value = clause.operator() == Operator.IN
+                    ? clause.values()
+                    : clause.values().get(0);
+            filter.put(clause.field(), Map.of(clause.operator().name().toLowerCase(Locale.ROOT), value));
+        }
+        return filter;
     }
 
     /** The BSON shape: a list of {@code { field, op, values }}. */

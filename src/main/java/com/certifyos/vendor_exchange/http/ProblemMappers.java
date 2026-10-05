@@ -29,6 +29,38 @@ public class ProblemMappers {
     }
 
     /**
+     * A refusal a service threw with its own status and code.
+     *
+     * @param refusal the refusal
+     * @param uri the request
+     * @return the refusal's status with a problem body
+     */
+    @ServerExceptionMapper
+    public Response problem(ProblemException refusal, UriInfo uri) {
+        return Problems.response(
+                refusal.status(),
+                refusal.code(),
+                refusal.getMessage(),
+                uri.getRequestUri().getPath());
+    }
+
+    /**
+     * A value a domain constructor refused (an id with an underscore, a day of month out of range).
+     *
+     * @param refusal the exception, whose message is the validation text
+     * @param uri the request
+     * @return 400 with code {@code INVALID_REQUEST}
+     */
+    @ServerExceptionMapper
+    public Response invalidArgument(IllegalArgumentException refusal, UriInfo uri) {
+        return Problems.response(
+                400,
+                "INVALID_REQUEST",
+                refusal.getMessage(),
+                uri.getRequestUri().getPath());
+    }
+
+    /**
      * A JAX-RS failure: unmatched path, wrong method, unreadable body, or one a resource threw.
      *
      * @param failure the exception, carrying its status

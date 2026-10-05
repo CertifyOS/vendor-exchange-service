@@ -18,9 +18,9 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 /**
- * Operator reads. Both answers are empty lists for now: they exist so the deployed service can
- * prove the whole chain (platform token, tenant membership, permission annotation, problem+json)
- * end to end before the export lane fills them.
+ * Operator batch reads. The list is empty until the export lane creates batches; it exists so the
+ * deployed service proves the whole chain (platform token, tenant membership, permission
+ * annotation, problem+json) end to end. Schedules live in {@code ScheduleResource}.
  */
 @Path("/v1/vendor-exports")
 @Produces(MediaType.APPLICATION_JSON)
@@ -48,23 +48,6 @@ public class VendorExportsResource {
 
     public VendorExportsResource(UserContext ctx) {
         this.ctx = ctx;
-    }
-
-    /**
-     * Lists the tenant's schedules.
-     *
-     * @return the schedules, empty until schedules are managed through this API
-     */
-    @GET
-    @Path("/schedules")
-    @RequiresPermission(Permission.READ)
-    @Operation(
-            summary = "List export schedules",
-            description = "Schedules of the tenant named by the tenant-id header. Empty until schedule "
-                    + "management is built.")
-    public Items<ScheduleSummary> schedules() {
-        LOG.debugf("schedules listed for tenant %s", ctx.tenantId());
-        return new Items<>(List.of());
     }
 
     /**
