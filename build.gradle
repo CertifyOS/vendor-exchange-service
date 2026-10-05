@@ -1,45 +1,51 @@
 plugins {
     id 'java'
-    id 'io.quarkus'
     id 'checkstyle'
-    id 'com.diffplug.spotless' version("${spotlessVersion}")
-    id 'com.github.spotbugs' version("${spotbugsVersion}")
     id 'jacoco'
+    alias(libs.plugins.quarkus)
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.spotbugs)
 }
 
 repositories {
-    gradlePluginPortal()
     mavenCentral()
-    mavenLocal()
 }
 
-group "com.certifyos.dal"
+group "com.certifyos.vendor_exchange"
 version = "1.0.0"
-buildDir = System.getProperty("custom.buildDir", "build")
+
+quarkus {
+    // The OpenAPI document is written on quarkusBuild only (not on test boots, whose documents would
+    // include test-only resources), so verifyOpenApi can compare it with the committed contract.
+    quarkusBuildProperties.put(
+            "quarkus.smallrye-openapi.store-schema-directory",
+            layout.buildDirectory.dir("openapi").get().asFile.path)
+}
 
 dependencies {
-    implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
-     implementation enforcedPlatform("${quarkusPlatformGroupId}:quarkus-google-cloud-services-bom:${quarkusPlatformVersion}")
-    implementation 'io.quarkus:quarkus-arc'
-    implementation 'io.quarkus:quarkus-logging-json'
-    implementation 'io.quarkus:quarkus-rest'
-    implementation 'io.quarkus:quarkus-rest-jackson'
-    implementation 'io.quarkus:quarkus-smallrye-health'
-    implementation 'io.smallrye.reactive:mutiny'
+    implementation enforcedPlatform(libs.quarkus.bom)
+    implementation libs.bundles.quarkus.runtime
+    implementation libs.quarkus.google.cloud.secret.manager
+    implementation libs.quarkus.logging.sentry
+    // JobRunr storage is the quarkus-mongodb-client bean; no separate storage-provider artifact exists.
+    implementation libs.quarkus.jobrunr
+    implementation libs.google.cloud.storage
+    implementation libs.google.cloud.pubsub
+    // Declared, not left transitive: the Pub/Sub push verifier imports com.google.auth.oauth2.TokenVerifier.
+    implementation libs.google.auth.oauth2.http
+    // UUIDv7 for event ids: JDK 21's java.util.UUID has no v7 factory.
+    implementation libs.java.uuid.generator
 
-    // GCP Services
-    implementation 'io.quarkiverse.googlecloudservices:quarkus-google-cloud-spanner'
-    implementation 'com.google.cloud:google-cloud-pubsub:1.132.3'
+    testImplementation libs.bundles.quarkus.test
+}
 
-    implementation 'org.jboss.logging:commons-logging-jboss-logging'
-    implementation 'org.jboss.logmanager:log4j-jboss-logmanager'
-    implementation 'org.jboss.logmanager:log4j2-jboss-logmanager'
-    implementation 'org.jboss.slf4j:slf4j-jboss-logmanager'
-
-    testImplementation 'io.quarkus:quarkus-jacoco'
-    testImplementation 'io.quarkus:quarkus-junit5'
-    testImplementation 'io.quarkus:quarkus-junit5-mockito'
-    testImplementation 'io.rest-assured:rest-assured'
+// Fail the build if a SNAPSHOT dependency ever appears (playbook: no SNAPSHOT on main).
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.version?.endsWith('-SNAPSHOT')) {
+            throw new GradleException("SNAPSHOT dependency not allowed: ${details.requested}")
+        }
+    }
 }
 
 java {
@@ -61,36 +67,32 @@ configurations {
     integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
-
 sourceSets {
     integrationTest {
-        java.srcDir file('src/integration-test/java')
-        resources.srcDir file('src/integration-test/resources')
+        java.srcDir file('src/integrationTest/java')
+        resources.srcDir file('src/integrationTest/resources')
         compileClasspath += main.output + test.output
         runtimeClasspath += main.output + test.output
     }
 }
 
 checkstyle {
-    toolVersion = "10.21.0"
+    toolVersion = libs.versions.checkstyle.get()
     configFile = file('config/checkstyle/checkstyle.xml')
 }
 
-
 jacoco {
-    toolVersion = '0.8.12'
+    toolVersion = libs.versions.jacoco.get()
 }
-
 
 spotbugs {
     ignoreFailures = false
     showStackTraces = true
-    showProgress = true
-    reportsDir = file("$buildDir/reports/spotbugs")
+    showProgress = false
+    reportsDir = layout.buildDirectory.dir("reports/spotbugs").get().asFile
     maxHeapSize = '1g'
     excludeFilter = file("config/spotbugs/exclude.xml")
 }
-
 
 spotless {
     java {
@@ -107,15 +109,13 @@ spotless {
 clean {
     delete sourceSets.integrationTest.output.classesDirs
     delete sourceSets.integrationTest.output.resourcesDir
-    delete file("$buildDir/reports/tests/integrationTest")
-    delete file("$buildDir/test-results/integrationTest")
+    delete layout.buildDirectory.dir("reports/tests/integrationTest")
+    delete layout.buildDirectory.dir("test-results/integrationTest")
 }
-
 
 checkstyleMain {
     dependsOn 'compileQuarkusGeneratedSourcesJava'
 }
-
 
 spotbugsMain {
     dependsOn 'compileQuarkusGeneratedSourcesJava'
@@ -129,8 +129,9 @@ task installGitHooks(type: Copy) {
     fileMode = 0755
 }
 
-// unit test runner config, coverage and jacoco reporting
+// Unit tests: plain JUnit for logic plus ArchUnit. Zero retries, by policy.
 test {
+    useJUnitPlatform()
     jacoco {
         excludeClassLoaders = ["*QuarkusClassLoader"]
         destinationFile = layout.buildDirectory.file("jacoco/jacoco.exec").get().asFile
@@ -150,8 +151,7 @@ jacocoTestReport {
     }
 }
 
-
-// integration test runner config, coverage and jacoco reporting
+// Integration tests: Quarkus wiring tests on the two role profiles against Testcontainers MongoDB.
 task integrationTest(type: Test) {
     group = "verification"
     description = "run integration tests"
@@ -159,14 +159,14 @@ task integrationTest(type: Test) {
     classpath = sourceSets.integrationTest.runtimeClasspath
     testClassesDirs = sourceSets.integrationTest.output.classesDirs
 
+    useJUnitPlatform()
+
     jacoco {
-        // excludeClassLoaders = ["*QuarkusClassLoader"]
         destinationFile = layout.buildDirectory.file("jacoco/integrationTest.exec").get().asFile
     }
 
     testLogging {
         events "passed", "skipped", "failed"
-        // showStandardStreams = true
     }
 
     finalizedBy 'jacocoIntegrationTestReport'
@@ -181,7 +181,7 @@ task jacocoIntegrationTestReport(type: JacocoReport) {
 
     executionData integrationTest
     sourceSets sourceSets.main
-    
+
     reports {
         csv.required = false
         html.required = true
@@ -191,10 +191,29 @@ task jacocoIntegrationTestReport(type: JacocoReport) {
     }
 }
 
-// unified all test runner
 task testAll {
     group = "verification"
-    description = "run all test types (excluding native)"
+    description = "run all test types"
     dependsOn test, integrationTest
     integrationTest.mustRunAfter test
 }
+
+// The committed OpenAPI contract must equal the one the code produces. `make openapi` regenerates it;
+// CI refuses a contract change that was not committed, and the oasdiff job refuses a breaking one.
+tasks.register('verifyOpenApi') {
+    dependsOn 'quarkusBuild'
+    description = 'Fails when openapi/openapi.yaml differs from the document the build produced'
+    group = 'verification'
+    def generated = layout.buildDirectory.file('openapi/openapi.yaml')
+    def committed = layout.projectDirectory.file('openapi/openapi.yaml')
+    inputs.file(generated)
+    inputs.file(committed)
+    doLast {
+        def produced = generated.get().asFile.text
+        def expected = committed.asFile.text
+        if (produced != expected) {
+            throw new GradleException('openapi/openapi.yaml is out of date with the code. Run `make openapi` and commit the result.')
+        }
+    }
+}
+check.dependsOn verifyOpenApi

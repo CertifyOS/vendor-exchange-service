@@ -1,0 +1,13 @@
+#!/bin/sh
+# Secret scan of the staged changes (playbook: secret scanning in pre-commit and CI).
+# gitleaks is optional locally: CI runs it over the full history regardless. Install with
+#   brew install gitleaks
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --no-banner --redact . || {
+    echo "gitleaks found a secret in the staged changes. Commit aborted."
+    exit 1
+  }
+else
+  echo "pre-commit: gitleaks not installed, skipping local secret scan (CI still runs it)."
+fi
+exit 0

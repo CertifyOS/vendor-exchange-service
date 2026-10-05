@@ -1,0 +1,61 @@
+#!/bin/bash
+# Rendered by Terraform (compute.tf) into both instance templates. Runs as root on every boot of a
+# Container-Optimized OS VM and starts the one container. Replaces the discontinued container
+# startup agent (file-ingestion finding 58).
+set -euo pipefail
+
+NAME=vendor-exchange
+
+# docker-credential-gcr writes to $HOME/.docker/config.json; the startup-script service can run
+# without HOME, so give it a writable one under /var.
+export HOME=/var/lib/vendor-exchange
+mkdir -p "$HOME"
+
+# Pulls authenticate as the VM's service account (roles/artifactregistry.reader, iam.tf).
+docker-credential-gcr configure-docker --registries=${registry} >/dev/null
+
+# COS's host firewall drops all inbound traffic except SSH, and with --network=host Docker adds no
+# rule for the app port, so health checks and the load balancer time out at the VM (file-ingestion
+# finding 60). Open the port here; the VPC firewall (network.tf) still decides who may reach it.
+iptables -w -C INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null \
+  || iptables -w -I INPUT -p tcp --dport 8080 -j ACCEPT
+
+# Optional secrets become environment variables, empty when the secret has no version yet. The
+# metadata server token is the VM's service account; secrets.tf grants it secretAccessor.
+TOKEN=$(curl -sf -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+  | sed -n 's/.*"access_token" *: *"\([^"]*\)".*/\1/p')
+secret() {
+  curl -sf -H "Authorization: Bearer $TOKEN" \
+    "https://secretmanager.googleapis.com/v1/projects/${project}/secrets/$1/versions/latest:access" \
+    | sed -n 's/.*"data" *: *"\([^"]*\)".*/\1/p' | base64 -d 2>/dev/null || true
+}
+API_LAYER_CLIENT_SECRET=$(secret vendor-exchange-apilayer-client-secret)
+SENTRY_DSN=$(secret vendor-exchange-sentry-dsn)
+SENTRY_ENABLED=false
+[ -n "$SENTRY_DSN" ] && SENTRY_ENABLED=true
+
+docker stop "$NAME" 2>/dev/null || true
+docker rm "$NAME" 2>/dev/null || true
+
+# A single pull under `set -e` once left a worker down after a transient registry error
+# (file-ingestion); five attempts with backoff, then let the health check replace the VM.
+attempt=1
+until docker pull "${image}"; do
+  if [ "$attempt" -ge 5 ]; then
+    echo "image pull failed after $attempt attempts" >&2
+    exit 1
+  fi
+  sleep $((10 * attempt * attempt))
+  attempt=$((attempt + 1))
+done
+
+# --network=host: the app listens on the VM's own :8080 (health check, load balancer named port)
+# and the worker's dashboard on :8000 (IAP tunnel only). Container stdout reaches Cloud Logging
+# through the COS logging agent (google-logging-enabled=true on the template).
+docker run --detach --name "$NAME" --restart=always --network=host \
+  -e API_LAYER_CLIENT_SECRET="$API_LAYER_CLIENT_SECRET" \
+  -e SENTRY_DSN="$SENTRY_DSN" \
+  -e SENTRY_ENABLED="$SENTRY_ENABLED" \
+  ${env_flags} \
+  "${image}"

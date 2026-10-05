@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinDigests", "helpers:pinGitHubActionDigests"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Quarkus and JobRunr move together after a gate run; never auto-merge",
+      "matchPackagePatterns": ["^io\\.quarkus", "^org\\.jobrunr"],
+      "groupName": "quarkus-and-jobrunr"
+    }
+  ]
+}

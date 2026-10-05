@@ -1,17 +1,17 @@
-# GCP Config Vars
-REGION := us-central1
-SERVICE_NAME := quarkus-example
-ARTIFACT_REGISTRY_REPO := cloud-run-source-deploy
-GCP_PROD_PROJECT_ID := certifyos-production-platform
-GCP_STAGING_PROJECT_ID := certifyos-development
+# vendor-exchange-service
+#
+# Developer verbs, then the internal deploy flow (terraform/internal). Each deploy step is one short
+# command so a runner that kills long processes never leaves an apply half done. Production deploys
+# happen only through CI once the Workload Identity binding exists (ask A10).
 
-# Vars that can be passed in
-PROFILE ?= dev
-GCP_PROJECT_ID ?= certifyos-development
-
-IMAGE_NAME := $(REGION)-docker.pkg.dev/$(GCP_PROJECT_ID)/$(ARTIFACT_REGISTRY_REPO)/$(SERVICE_NAME)
-TAG := $(shell date +%Y%m%d%H%M%S)
-FULL_IMAGE_NAME := $(IMAGE_NAME):$(TAG)
+PROJECT  := certifyos-development
+REGION   := us-central1
+REPO     := $(REGION)-docker.pkg.dev/$(PROJECT)/vendor-exchange
+TAG      := $(shell git rev-parse --short=12 HEAD)
+IMAGE    := $(REPO)/vendor-exchange-service:$(TAG)
+ROLE     ?= api
+TF_DIR   := terraform/internal
+TF       := terraform -chdir=$(TF_DIR)
 
 ifeq ($(OS),Windows_NT)
     GRADLEW := gradlew.bat
@@ -19,183 +19,116 @@ else
     GRADLEW := ./gradlew
 endif
 
-# Default target
 default: help
 
-###### Targets for use by devs ######
 .PHONY: help
-help: ## This help command
-	@echo "Available Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+help: ## List targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-# Development Tasks
-.PHONY: install-git-hooks
-install-git-hooks: ## Install project's git hooks to your local repo
+.PHONY: bootstrap
+bootstrap: ## One-time setup: git hooks and a local .env
 	$(GRADLEW) installGitHooks
+	@test -f .env || cp .env.example .env
+	@echo "Fill the (required) values in .env, then: make dev"
 
 .PHONY: dev
-dev: ## Run the application locally in dev mode
-	$(GRADLEW) quarkusDev -Dquarkus.console.basic=true
+dev: ## Run locally in dev mode; ROLE=api (default) or ROLE=worker
+	QUARKUS_PROFILE=dev,$(ROLE) $(GRADLEW) quarkusDev -Dquarkus.console.basic=true
 
-.PHONY: run
-run: build-local-native ## Run the native binary of the application locally
-	./build/*SNAPSHOT-runner
-
-.PHONY: format-fix
-format-fix: ## Format the code
+.PHONY: fmt
+fmt: ## Apply Spotless formatting
 	$(GRADLEW) spotlessApply
 
-.PHONY: format-check
-format-check: ## Format the code
-	$(GRADLEW) spotlessCheck
-
 .PHONY: lint
-lint: ## Lint the codebase
-	$(GRADLEW) checkstyleMain checkstyleTest checkstyleIntegrationTest
+lint: ## Spotless check, Checkstyle and SpotBugs on every source set (no tests)
+	$(GRADLEW) spotlessCheck checkstyleMain checkstyleTest checkstyleIntegrationTest spotbugsMain spotbugsTest spotbugsIntegrationTest
 
-.PHONY: integration-test
-integration-test: ## Run integration tests with Firestore emulator
-	$(GRADLEW) integrationTest
-
-.PHONY: integration-test-one
-integration-test-one:
-	$(GRADLEW) integrationTest --tests "$(TEST)"
+.PHONY: compile
+compile: ## Compile main, test and integrationTest sources without running anything
+	$(GRADLEW) compileJava compileTestJava compileIntegrationTestJava
 
 .PHONY: test
-test: ## Run unit tests
+test: ## Unit tests (plain JUnit, ArchUnit)
 	$(GRADLEW) test
 
-.PHONY: test
-test-one:
-	$(GRADLEW) test --tests "$(TEST)"
-
-.PHONY: native-test
-native-test: ## Run native integration tests with Firestore emulator
-	$(GRADLEW) testNative -x test -x integrationTest
-
-.PHONY: coverage
-coverage: codegen-test test ## Generate a code coverage report (unit test only)
-	$(GRADLEW) jacocoTestReport
-
-.PHONY: static-analysis
-static-analysis: ## Run static analysis using SpotBugs
-	$(GRADLEW) spotbugsMain spotbugsTest  spotbugsIntegrationTest
-
 .PHONY: check
-check: clean format-check ## Run all tests, lint and format the code
+check: ## Everything CI runs (lint, unit tests, integration tests on Testcontainers)
 	$(GRADLEW) check
 
-.PHONY: javadoc
-javadoc: ## Run javadoc
-	$(GRADLEW) javadoc
-
-# Build Tasks
-.PHONY: clean
-clean: ## Clean the build directory
-	$(GRADLEW) clean
-
-.PHONY: build-local
-build-local: clean ## Build JAR for running on local JVM
-	./gradlew build \
-		-Pquarkus.profile=$(PROFILE) \
-		-x integrationTest \
-		-x test \
-		-x jacocoTestCoverageVerification \
-		-x jacocoTestReport \
-		-x spotbugsIntegrationTest \
-		-x spotbugsMain \
-		-x spotbugsNativeTest \
-		-x spotbugsTest \
-		-x spotlessApply \
-		-x spotlessCheck;
-
-.PHONY: build-local-native
-build-local-native: clean ## Build native binary for local machine
-	$(GRADLEW) build \
-		-Dquarkus.native.enabled=true \
-		-Dquarkus.package.jar.enabled=false \
-		-Pquarkus.profile=$(PROFILE) \
-		-x integrationTest \
-		-x test \
-		-x jacocoTestCoverageVerification \
-		-x jacocoTestReport \
-		-x spotbugsIntegrationTest \
-		-x spotbugsMain \
-		-x spotbugsNativeTest \
-		-x spotbugsTest \
-		-x spotlessApply \
-		-x spotlessCheck;
-
-# Deployment Tasks
-.PHONY: deploy-staging
-deploy-staging: check ## Deploy to the staging environment
-	@$(MAKE) deploy GCP_PROJECT_ID=$(GCP_STAGING_PROJECT_ID) PROFILE=dev TAG=canary
-
-.PHONY: deploy-prod
-deploy-prod: check ## Deploy to the production environment
-	@$(MAKE) deploy GCP_PROJECT_ID=$(GCP_PROD_PROJECT_ID) PROFILE=prod TAG=production
-
-###### Targets that should not be used directly ######
-
-.PHONY: build-native
-build-native: clean
-	$(GRADLEW) build \
-		-Dquarkus.native.enabled=true \
-		-Dquarkus.native.container-build=true \
-		-Dquarkus.native.container-runtime=docker \
-		-Dquarkus.native.container-runtime-options=--platform=linux/amd64 \
-		-x integrationTest \
-		-Pquarkus.profile=$(PROFILE) \
-		-x integrationTest \
-		-x test \
-		-x jacocoTestCoverageVerification \
-		-x jacocoTestReport \
-		-x spotbugsIntegrationTest \
-		-x spotbugsMain \
-		-x spotbugsNativeTest \
-		-x spotbugsTest \
-		-x spotlessApply \
-		-x spotlessCheck;
+.PHONY: openapi
+openapi: ## Regenerate openapi/openapi.yaml from the code (commit the result; CI verifies it)
+	$(GRADLEW) quarkusBuild
+	cp build/openapi/openapi.yaml openapi/openapi.yaml
 
 .PHONY: build-image
-build-image:
-	docker build \
-		--platform=linux/amd64 \
-		--build-arg QUARKUS_PROFILE=$(PROFILE) \
-		-f src/main/docker/Dockerfile.native \
-		-t $(FULL_IMAGE_NAME) \
-		.
-
-# Deployment Tasks
-# Allow overriding the image name for deployment, default to calculated FULL_IMAGE_NAME
-IMAGE_NAME_TO_DEPLOY ?= $(FULL_IMAGE_NAME)
-
-.PHONY: deploy-cloud-run
-deploy-cloud-run:
-	gcloud run deploy $(SERVICE_NAME) \
-		--image $(IMAGE_NAME_TO_DEPLOY) \
-		--region $(REGION) \
-		--project $(GCP_PROJECT_ID) \
-		--no-allow-unauthenticated \
-		--ingress=internal-and-cloud-load-balancing \
-		--tag=$(TAG) \
-		--no-traffic
+build-image: ## Fast-jar, then the linux/amd64 image tagged with the current commit
+	$(GRADLEW) quarkusBuild
+	docker build --platform linux/amd64 -f src/main/docker/Dockerfile.jvm -t $(IMAGE) .
+	@echo "$(IMAGE)"
 
 .PHONY: push-image
-push-image:
-#	gcloud auth configure-docker $(REGION)-docker.pkg.dev --quiet
-	docker push $(FULL_IMAGE_NAME)
+push-image: build-image ## Push the image (one-time first: gcloud auth configure-docker us-central1-docker.pkg.dev -q)
+	docker push $(IMAGE)
+	@echo "pushed $(IMAGE)"
 
-.PHONY: shift-traffic
-shift-traffic:
-	gcloud run services update-traffic $(SERVICE_NAME) \
-		--to-tags=$(TAG)=100 \
-		--region $(REGION) \
-		--project $(GCP_PROJECT_ID)
+# ---- terraform/internal ------------------------------------------------------------------------
+
+.PHONY: tf-init
+tf-init: ## terraform init against the GCS state bucket
+	$(TF) init -input=false
+
+.PHONY: tf-validate
+tf-validate: ## terraform fmt -check and validate
+	$(TF) fmt -check -recursive
+	$(TF) validate
+
+.PHONY: tf-plan
+tf-plan: ## Full plan (read-only)
+	$(TF) plan -input=false
+
+.PHONY: bootstrap-infra
+bootstrap-infra: ## First apply: registry and secret containers only, so the image can be pushed and the Mongo URI added before the VMs exist
+	$(TF) apply -input=false -target=google_artifact_registry_repository.images -target='google_secret_manager_secret.s'
+
+.PHONY: tf-apply
+tf-apply: ## Full apply (interactive approval). Run after bootstrap-infra, the Mongo secret version, and push-image.
+	$(TF) apply -input=false
+
+.PHONY: create-template
+create-template: ## New instance templates for both roles pointing at IMAGE (no group change)
+	printf '# Written by `make create-template`. See the Makefile.\nimage = "%s"\n' "$(IMAGE)" > $(TF_DIR)/image.auto.tfvars
+	$(TF) apply -input=false -auto-approve -target='google_compute_instance_template.role["api"]' -target='google_compute_instance_template.role["worker"]'
 
 .PHONY: deploy
-deploy: build-native build-image push-image deploy-cloud-run
+deploy: push-image ## Push, write image.auto.tfvars, apply templates and both groups (api rolls PROACTIVE; worker waits for rollout-worker)
+	printf '# Written by `make deploy`. See the Makefile.\nimage = "%s"\n' "$(IMAGE)" > $(TF_DIR)/image.auto.tfvars
+	bash -o pipefail -c "$(TF) apply -input=false -auto-approve -compact-warnings -no-color \
+	  -target='google_compute_instance_template.role[\"api\"]' -target='google_compute_instance_template.role[\"worker\"]' \
+	  -target=google_compute_region_instance_group_manager.api -target=google_compute_region_instance_group_manager.worker \
+	  2>&1 | grep -E 'Plan:|Apply complete|Error|Creating\.\.\.|Creation complete|Modifying\.\.\.|Modifications complete|Destroying\.\.\.|Destruction complete'"
+	@echo "deployed $(IMAGE); api group rolling. Worker: make rollout-worker."
 
-.PHONY: print-image-name
-print-image-name: ## Print the full image name (helper for CI/CD)
-	@echo "$(FULL_IMAGE_NAME)"
+.PHONY: rollout-api
+rollout-api: ## Proactive rolling update of the api group to the current api template
+	gcloud compute instance-groups managed rolling-action start-update vendor-exchange-api --region $(REGION) --project $(PROJECT) \
+	  --version template=$$($(TF) output -raw api_template) --max-surge 3 --max-unavailable 0 --type proactive
+	gcloud compute instance-groups managed wait-until vendor-exchange-api --stable --region $(REGION) --project $(PROJECT) --timeout 600
+
+.PHONY: rollout-worker
+rollout-worker: ## Proactive rolling update of the worker group (check jobrunr_jobs has no PROCESSING document first)
+	gcloud compute instance-groups managed rolling-action start-update vendor-exchange-worker --region $(REGION) --project $(PROJECT) \
+	  --version template=$$($(TF) output -raw worker_template) --max-surge 3 --max-unavailable 0 --type proactive
+	gcloud compute instance-groups managed wait-until vendor-exchange-worker --stable --region $(REGION) --project $(PROJECT) --timeout 600
+
+rollback-%: ## make rollback-api PREVIOUS_TEMPLATE=<template self link> (or rollback-worker)
+	gcloud compute instance-groups managed rolling-action start-update vendor-exchange-$* --region $(REGION) --project $(PROJECT) \
+	  --version template=$(PREVIOUS_TEMPLATE) --max-surge 3 --max-unavailable 0 --type proactive
+
+.PHONY: tunnel-dashboard
+tunnel-dashboard: ## IAP tunnel to the worker's JobRunr dashboard: then open http://localhost:8000
+	$(eval WORKER := $(shell gcloud compute instance-groups managed list-instances vendor-exchange-worker --region $(REGION) --project $(PROJECT) --format='value(instance.basename(),instance.scope(zones).segment(0))' | head -1))
+	gcloud compute start-iap-tunnel $(word 1,$(WORKER)) 8000 --local-host-port=localhost:8000 --zone $(word 2,$(WORKER)) --project $(PROJECT)
+
+.PHONY: smoke
+smoke: ## Live smoke test (TOKEN_FILE=... for the authenticated cases; LB_IP=... until DNS exists)
+	scripts/smoke-api.sh

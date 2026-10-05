@@ -39,3 +39,12 @@ nb-configuration.xml
 /.quarkus/cli/plugins/
 # TLS Certificates
 .certs/
+
+# Local code-intelligence tool state
+.serena/
+
+# Terraform - matches api-layer's convention of not committing .terraform.lock.hcl either
+**/.terraform*
+*.tfplan
+*.tfstate
+*.tfstate.*

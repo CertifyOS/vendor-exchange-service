@@ -1,62 +1,85 @@
-# quarkus-example
+# vendor-exchange-service
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Directory accuracy vendor exchange. Phase 1 selects practitioners per tenant on a schedule, asks the egress service to build the vendor file, and records what was sent. Phase 2 ingests the vendor's response in the same service.
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+- Design: Confluence "CP-39602 - Design: Directory accuracy vendor export".
+- Working rules: `AGENTS.md` (the one guidance file; every rule there is enforced by a lint or a test).
+- Decisions: `docs/adr/` (settled) and `docs/decisions.md` (running log, numbered findings with evidence).
+- Operations: `docs/runbook.md`. Hand-over state: `HANDOFF.md`.
 
-## Running the application in dev mode
+## Shape
 
-You can run your application in dev mode that enables live coding using:
+One image, two roles chosen by Quarkus profile. `prod,api` serves HTTP behind the load balancer: operator endpoints under `/v1/vendor-exports`, the Pub/Sub push endpoint under `/internal`, health and metrics under `/q`. `prod,worker` runs the JobRunr job server and dashboard and takes no inbound traffic. Both roles share one MongoDB database, `vendor_exchange`, which holds the four service collections and JobRunr's five `jobrunr_` collections.
 
-```shell script
-./gradlew quarkusDev
+```
+export lane        tick (06:00 UTC) -> SelectJob -> RequestEgressJob -> completion event or DeadlineCheckJob -> FinishJob
+foundations        config  persistence  audit  auth  http  clients  metrics
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+## Prerequisites
 
-## Packaging and running the application
+- Java 21. Gradle comes with the wrapper.
+- Docker, for the integration tests (Testcontainers MongoDB replica set) and the image build.
+- For local runs: a MongoDB replica set and the values marked required in `.env.example`.
+- For deploys: `gcloud` authenticated to `certifyos-development`, Terraform 1.9 or newer.
 
-The application can be packaged using:
+## First run
 
-```shell script
-./gradlew build
+```shell
+make bootstrap                 # installs the git hooks, copies .env.example to .env
+docker run -d --name mongo -p 27017:27017 mongo:7.0 --replSet rs0
+docker exec mongo mongosh --quiet --eval 'rs.initiate()'
+make dev                       # api role on :8080
+make dev ROLE=worker           # worker role: JobRunr server, dashboard on :8000
 ```
 
-It produces the `quarkus-run.jar` file in the `build/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `build/quarkus-app/lib/` directory.
+Fill the required values in `.env` first. The DAL, egress and api-layer URLs can stay at their internal defaults: nothing calls them until an operator request or a job needs to, and a local run has no IAP access anyway. What a local run touches for real: only the MongoDB you point it at. The tick writes `EXPORT_TICK_COMPLETED` events there; nothing leaves the machine.
 
-The application is now runnable using `java -jar build/quarkus-app/quarkus-run.jar`.
+Local requests need a platform token only when the OIDC tenant is on, which it is not outside the `prod` profile. The tenant-membership filter still runs and still calls the DAL, so an operator call from a laptop ends in `503 DAL_UNAVAILABLE` unless `DAL_URL` points at something that answers `/users/by-email`.
 
-If you want to build an _über-jar_, execute the following command:
+## Everyday
 
-```shell script
-./gradlew build -Dquarkus.package.jar.type=uber-jar
+```shell
+make compile     # compile every source set, run nothing
+make lint        # Spotless check, Checkstyle, SpotBugs
+make fmt         # apply Spotless
+make test        # unit tests: plain JUnit, ArchUnit, SmallRye config
+make check       # everything CI runs, integration tests included (needs Docker)
+make openapi     # regenerate openapi/openapi.yaml after an endpoint change, then commit it
 ```
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar build/*-runner.jar`.
+CI runs `./gradlew check` on every push and pull request, a gitleaks scan, and an oasdiff breaking-change check of `openapi/openapi.yaml` against `main`. `main` is protected: CI green, one approval, code-owner review.
 
-## Creating a native executable
+## Tests
 
-You can create a native executable using:
+- `src/test`: unit tests. ArchUnit enforces the package rules and the playbook rules (constructor injection, one logger, typed contracts, every endpoint documented and permission-annotated).
+- `src/integrationTest`: Quarkus wiring on a Testcontainers MongoDB replica set, two profiles only: `ApiTestProfile` (`test,api`) and `WorkerTestProfile` (`test,worker`). WireMock stands in for the DAL, egress and api-layer. The Google token services are mocked where a test crosses them.
+- `./gradlew check` fails when `openapi/openapi.yaml` differs from what the code produces.
 
-```shell script
-./gradlew build -Dquarkus.native.enabled=true
+## Build and deploy
+
+```shell
+make build-image   # fast-jar, then the linux/amd64 image tagged with the current commit
+make push-image    # to Artifact Registry (one-time: gcloud auth configure-docker us-central1-docker.pkg.dev -q)
+make deploy        # push, write terraform/internal/image.auto.tfvars, apply templates and groups
 ```
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
+`terraform/internal/` owns the service shape in `certifyos-development`; the deploy flow changes only the image. First-time order, rollouts, rollback, the hand grants and the pending hook-ups are in `docs/runbook.md`.
 
-```shell script
-./gradlew build -Dquarkus.native.enabled=true -Dquarkus.native.container-build=true
+## Layout
+
 ```
-
-You can then execute your native executable with: `./build/quarkus-example-1.0.0-SNAPSHOT-runner`
-
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/gradle-tooling>.
-
-## Provided Code
-
-### REST
-
-Easily start your REST Web Services
-
-[Related guide section...](https://quarkus.io/guides/getting-started-reactive#reactive-jax-rs-resources)
+src/main/java/com/certifyos/vendor_exchange/
+  config/       VendorExchangeConfig (closed mapping), RoleProfileCheck, MongoIndexes, Clocks
+  persistence/  Collections, Transactions, Documents, Ids, AlreadyExistsException
+  audit/        AuditEvent, AuditEventType (24 types), AuditRepository, Actors
+  auth/         UserContextFilter, PermissionFilter, DalUserClient, Google ID tokens, push token verifier
+  http/         Problem (RFC 9457), Problems, ProblemMappers
+  clients/      EgressClient, ApiLayerClient, ApiLayerTokenService, readiness
+  metrics/      VendorExchangeMetrics (the design's names)
+  export/       schedule/ batch/ jobs/ events/ api/ and ExportStateGauges
+terraform/internal/   the internal environment
+scripts/smoke-api.sh  live smoke test
+openapi/openapi.yaml  the committed contract
+docs/                 adr/, decisions.md, runbook.md
+```

@@ -3,35 +3,34 @@
     "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
     "https://checkstyle.org/dtds/suppressions_1_2.dtd">
 
-<!-- IMPORTANT ECLIPSE NOTE: If you change this file, you must restart Eclipse
- for your changes to take effect in its Checkstyle integration. -->
 <suppressions>
-    <!-- Suppress test classes -->
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" checks="Javadoc*" />
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" checks="VariableDeclarationUsageDistance" />
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" checks="VisibilityModifier" />
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" checks="AvoidStaticImport" />
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" id="BanSystemOut" />
-    <suppress files="[/\\]src[/\\].*[Tt]est[/\\](java|groovy)[/\\]" id="BanSystemErr" />
+    <!-- Test and integration-test sources -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" checks="Javadoc*" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" checks="VariableDeclarationUsageDistance" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" checks="VisibilityModifier" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" checks="AvoidStaticImport" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" checks="HideUtilityClassConstructor" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanSystemOut" />
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanSystemErr" />
 
-    <!-- Suppress generator classes - ignore all checks -->
-    <suppress files="[/\\]src[/\\]test[/\\]java[/\\]com[/\\]certifyos[/\\]dal[/\\]testing[/\\]generators[/\\].*\.java$" checks="." />
+    <!-- File length: 500 for main, 1,000 for tests. Each FileLength module applies to one side only. -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="FileLengthMain" />
+    <suppress files="[/\\]src[/\\]main[/\\]java[/\\]" id="FileLengthTest" />
 
-    <!-- Suppress test resources -->
-    <suppress files="[/\\]src[/\\]test[/\\]resources.*" checks="." />
+    <!-- Ticket keys: banned in main; in tests only inside an @Disabled reason, which DisabledNeedsTicket requires. -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]java[/\\]" id="BanTicketKeys" />
+    <suppress files="[/\\]src[/\\]main[/\\]java[/\\]" id="DisabledNeedsTicket" />
 
-    <!-- JavadocStyle enforces existence of package-info.java package-level Javadoc; we consider this a bug. -->
+    <!-- Test resources -->
+    <suppress files="[/\\]src[/\\](test|integrationTest)[/\\]resources.*" checks="." />
+
+    <!-- JavadocStyle enforces package-level Javadoc in package-info.java; not wanted. -->
     <suppress files="package-info.java" checks="JavadocStyle" />
 
-    <!-- non-code classes -->
+    <!-- non-code files -->
     <suppress files="\.(bdr|eot|gif|gzip|jar|json|otf|png|svg|ttf|woff|zip)$" checks="FileTabCharacter" />
     <suppress files="\.(bdr|eot|gif|gzip|jar|json|otf|png|svg|ttf|woff|zip)$" checks="NewlineAtEndOfFile" />
 
-    <!-- Allow @Inject fields to be package-private to avoid Quarkus warning about private injected fields -->
-    <suppress files="BaseService\.java$" checks="VisibilityModifier" />
-    <suppress files="RequestContextHolder\.java$" checks="VisibilityModifier" />
-    <suppress files="NetworkNtJsonSchemaValidator\.java$" checks="VisibilityModifier" />
-
-    <!-- Generated code should not be subjected to checkstyle. -->
+    <!-- Generated code is not subject to checkstyle. -->
     <suppress files="[/\\].*[/\\]generated.*[/\\]" checks="." />
 </suppressions>

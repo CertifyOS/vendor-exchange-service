@@ -1,2 +1,2 @@
-# applies to every change in this repo, we should expand this and have better scoping as we continue the project
-*           @chris-certifyos @john-certifyos @amalan-certifyos
+# Applies to every change in this repo; narrow the scoping as the project grows.
+*           @dev-certifyos @suhasini-certify
