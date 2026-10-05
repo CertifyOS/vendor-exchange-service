@@ -112,3 +112,5 @@ Plan: `cos-docs/directory-accuracy/vendor-export/scaffolding-implementation-plan
 40. **Actors live in one place.** `Actors.SYSTEM` (`system:vendor-export`) and `Actors.EGRESS_EVENT` (`system:egress-event`); `ScheduleRepository.advance` now writes `Actors.SYSTEM` as `updatedBy` instead of its own copy of the string. `export.schedule` depending on `audit` is allowed by the layout rule; the reverse is not.
 
 41. **Complexity cap met by splitting, not suppressing.** The envelope's compact constructor hit Checkstyle's `CyclomaticComplexity` of 10 (13); validation moved into two small static methods. First time the cap bit; it will keep biting on validators, and splitting is the answer every time.
+
+42. **Step 3 gate.** CI run `37256675592` green in 2 min 54 s: unit 43 of 43 (`AuditEventTest` adds 5), integration 37 of 37 (`AuditRepositoryIT` adds 4). Green on the first push.
