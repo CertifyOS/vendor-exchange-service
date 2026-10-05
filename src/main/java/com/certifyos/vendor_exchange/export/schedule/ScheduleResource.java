@@ -4,11 +4,13 @@ import com.certifyos.vendor_exchange.auth.Permission;
 import com.certifyos.vendor_exchange.auth.RequiresPermission;
 import com.certifyos.vendor_exchange.auth.UserContext;
 import com.certifyos.vendor_exchange.export.api.Items;
+import com.certifyos.vendor_exchange.export.batch.BatchLifecycle;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.DisableRequest;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.EnableRequest;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.PreviewRequest;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.PreviewResponse;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.PutRequest;
+import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.RunNowResponse;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.ScheduleView;
 import com.certifyos.vendor_exchange.http.Problem;
 import com.certifyos.vendor_exchange.http.ProblemException;
@@ -56,8 +58,9 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
         content = @Content(mediaType = Problem.MEDIA_TYPE, schema = @Schema(implementation = Problem.class)))
 @APIResponse(
         responseCode = "409",
-        description = "Exists, stale version, already enabled or disabled, ambiguous template (SCHEDULE_EXISTS, "
-                + "VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED, TEMPLATE_AMBIGUOUS)",
+        description =
+                "Exists, stale version, already enabled or disabled, ambiguous template (SCHEDULE_EXISTS, "
+                        + "VERSION_STALE, ALREADY_ENABLED, ALREADY_DISABLED, TEMPLATE_AMBIGUOUS, BATCH_EXISTS, SCHEDULE_DISABLED)",
         content = @Content(mediaType = Problem.MEDIA_TYPE, schema = @Schema(implementation = Problem.class)))
 @APIResponse(
         responseCode = "503",
@@ -187,6 +190,34 @@ public class ScheduleResource {
         String reason = request == null ? null : request.reason();
         boolean catchUp = request != null && Boolean.TRUE.equals(request.catchUp());
         return ScheduleView.of(service.enable(tenantId, vendor, reason, catchUp, ctx.email()));
+    }
+
+    /**
+     * Creates the current period's batch now.
+     *
+     * @param tenantId the tenant
+     * @param vendor the vendor
+     * @return 201 with the batch id, its select job id and the schedule's new due instant
+     */
+    @POST
+    @Path("/{tenantId}/{vendor}/run-now")
+    @RequiresPermission(Permission.MANAGE)
+    @Operation(
+            summary = "Run an export schedule now",
+            description = "Creates the current period's batch as the tick would, advances nextDueAt and enqueues the "
+                    + "select job. 409 BATCH_EXISTS when the period already has its batch, SCHEDULE_DISABLED when "
+                    + "the schedule is disabled.")
+    @APIResponse(
+            responseCode = "201",
+            description = "Batch created",
+            content = @Content(schema = @Schema(implementation = RunNowResponse.class)))
+    public Response runNow(@PathParam("tenantId") String tenantId, @PathParam("vendor") String vendor) {
+        sameTenant(tenantId);
+        BatchLifecycle.Scheduled scheduled = service.runNow(tenantId, vendor, ctx.email());
+        return Response.status(201)
+                .entity(new RunNowResponse(
+                        scheduled.batch().id(), scheduled.jobId().toString(), scheduled.nextDueAt()))
+                .build();
     }
 
     /**

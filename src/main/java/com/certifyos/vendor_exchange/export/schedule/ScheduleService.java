@@ -3,29 +3,24 @@ package com.certifyos.vendor_exchange.export.schedule;
 import com.certifyos.vendor_exchange.audit.AuditEvent;
 import com.certifyos.vendor_exchange.audit.AuditEventType;
 import com.certifyos.vendor_exchange.audit.AuditRepository;
-import com.certifyos.vendor_exchange.clients.ApiLayerClient;
-import com.certifyos.vendor_exchange.clients.ApiLayerNotConfiguredException;
-import com.certifyos.vendor_exchange.clients.PagedPractitioners;
+import com.certifyos.vendor_exchange.export.batch.BatchLifecycle;
+import com.certifyos.vendor_exchange.export.batch.StaleScheduleException;
 import com.certifyos.vendor_exchange.export.schedule.ScheduleRequests.PutRequest;
 import com.certifyos.vendor_exchange.http.ProblemException;
 import com.certifyos.vendor_exchange.persistence.AlreadyExistsException;
 import com.certifyos.vendor_exchange.persistence.Ids;
 import com.certifyos.vendor_exchange.persistence.Transactions;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.model.Updates;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.ProcessingException;
-import jakarta.ws.rs.WebApplicationException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.bson.conversions.Bson;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 /**
@@ -44,8 +39,8 @@ public class ScheduleService {
     private final AuditRepository audit;
     private final Transactions transactions;
     private final TemplateProvisioner templates;
-    private final ApiLayerClient apiLayer;
-    private final ObjectMapper mapper;
+    private final BatchLifecycle lifecycle;
+    private final SelectionPreview preview;
     private final Clock clock;
 
     public ScheduleService(
@@ -53,15 +48,15 @@ public class ScheduleService {
             AuditRepository audit,
             Transactions transactions,
             TemplateProvisioner templates,
-            @RestClient ApiLayerClient apiLayer,
-            ObjectMapper mapper,
+            BatchLifecycle lifecycle,
+            SelectionPreview preview,
             Clock clock) {
         this.schedules = schedules;
         this.audit = audit;
         this.transactions = transactions;
         this.templates = templates;
-        this.apiLayer = apiLayer;
-        this.mapper = mapper;
+        this.lifecycle = lifecycle;
+        this.preview = preview;
         this.clock = clock;
     }
 
@@ -274,6 +269,41 @@ public class ScheduleService {
     }
 
     /**
+     * Creates the current period's batch now, as the tick would: insert, advance {@code nextDueAt},
+     * {@code EXPORT_BATCH_SCHEDULED} with {@code trigger = MANUAL} and {@code SCHEDULE_RUN_NOW} in
+     * one transaction, then the select job. How a pilot's first export is started.
+     *
+     * @param tenantId the tenant
+     * @param vendor the vendor
+     * @param actor the operator
+     * @return the batch, its select job and the schedule's new due instant
+     */
+    public BatchLifecycle.Scheduled runNow(String tenantId, String vendor, String actor) {
+        Schedule schedule = require(tenantId, vendor);
+        if (!schedule.enabled()) {
+            throw ProblemException.conflict(
+                    "SCHEDULE_DISABLED", "schedule " + schedule.id() + " is disabled; enable it first");
+        }
+        Instant now = clock.instant();
+        YearMonth period = YearMonth.from(now.atZone(schedule.timezone()));
+        String exportBatchId = Ids.batchId(tenantId, vendor, period, 1);
+        AuditEvent runNow = AuditEvent.of(AuditEventType.SCHEDULE_RUN_NOW, tenantId, vendor)
+                .actor(actor)
+                .occurredAt(now)
+                .detail("period", period.toString())
+                .detail("exportBatchId", exportBatchId)
+                .build();
+        try {
+            return lifecycle
+                    .schedule(schedule, period, 1, BatchLifecycle.Trigger.MANUAL, actor, now, runNow)
+                    .orElseThrow(() -> ProblemException.conflict(
+                            "BATCH_EXISTS", "period " + period + " already has batch " + exportBatchId));
+        } catch (StaleScheduleException changed) {
+            throw ProblemException.conflict("VERSION_STALE", changed.getMessage());
+        }
+    }
+
+    /**
      * How many practitioners a selection matches today, through api-layer with page size 1.
      *
      * @param tenantId the tenant
@@ -285,29 +315,7 @@ public class ScheduleService {
         SelectionCriteria criteria = selection == null || selection.isEmpty()
                 ? require(tenantId, vendor).selection()
                 : ScheduleRequests.toCriteria(selection);
-        try {
-            PagedPractitioners page = apiLayer.practitionerFindMany(tenantId, filterJson(criteria), 0, 1);
-            return page.totalCount() == null ? 0 : page.totalCount();
-        } catch (ApiLayerNotConfiguredException notConfigured) {
-            throw ProblemException.unavailable("API_LAYER_NOT_CONFIGURED", notConfigured.getMessage());
-        } catch (WebApplicationException | ProcessingException failure) {
-            LOG.warnf("preview for %s failed: %s", tenantId, failure.toString());
-            throw ProblemException.unavailable("API_LAYER_UNAVAILABLE", "api-layer could not answer the preview");
-        }
-    }
-
-    /**
-     * The selection as api-layer's {@code filter} query parameter.
-     *
-     * @param criteria the selection
-     * @return JSON
-     */
-    public String filterJson(SelectionCriteria criteria) {
-        try {
-            return mapper.writeValueAsString(criteria.toFilter());
-        } catch (JsonProcessingException impossible) {
-            throw new IllegalStateException("selection could not be serialised", impossible);
-        }
+        return preview.count(tenantId, criteria);
     }
 
     /** One schedule, or 404. */
