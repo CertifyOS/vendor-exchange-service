@@ -286,10 +286,12 @@ public class BatchCompletion {
         return transactions.run(session -> {
             boolean moved = batches.transition(session, batch.id(), from, to, now, updates);
             if (moved) {
-                audit.write(session, event);
+                // The facts that led to the transition (received, missed, reconciled) are written
+                // before the transition's own event, so the trail reads in the order things happened.
                 for (AuditEvent companion : companions) {
                     audit.write(session, companion);
                 }
+                audit.write(session, event);
             }
             return moved;
         });
