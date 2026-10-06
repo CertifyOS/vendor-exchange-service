@@ -105,6 +105,7 @@ public class TickJob {
                             scheduled.get().nextDueAt()));
                 } else {
                     skipped++;
+                    lifecycle.skipPeriod(schedule, period, clock.instant());
                 }
             } catch (StaleScheduleException changed) {
                 LOG.warnf("%s: %s; the schedule is left for the next tick", tickId, changed.getMessage());

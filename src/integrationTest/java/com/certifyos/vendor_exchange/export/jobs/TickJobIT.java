@@ -167,7 +167,7 @@ public class TickJobIT {
     }
 
     @Test
-    void aPeriodThatAlreadyHasItsBatchIsSkippedAndTheScheduleIsNotAdvanced() {
+    void aPeriodThatAlreadyHasItsBatchIsSkippedAndTheScheduleMovesPastIt() {
         Instant due = Instant.now().minusSeconds(60);
         Schedule schedule = dueSchedule("tick-dup", ZoneId.of("UTC"), due);
         YearMonth period = YearMonth.from(due.atZone(ZoneId.of("UTC")));
@@ -181,8 +181,45 @@ public class TickJobIT {
         Assertions.assertTrue(mine(result, "tick-dup").isEmpty());
         Assertions.assertTrue(result.skippedAlreadyExists() >= 1, result.toString());
         Schedule after = schedules.find("tick-dup", "candor").orElseThrow();
-        Assertions.assertEquals(schedule.version(), after.version(), "the transaction was abandoned whole");
-        Assertions.assertNull(after.lastBatchId());
+        Assertions.assertEquals(schedule.version() + 1, after.version(), "the schedule moved past the period");
+        Assertions.assertTrue(
+                YearMonth.from(after.nextDueAt().atZone(ZoneId.of("UTC"))).isAfter(period),
+                "next due is in a later month, so the tick never finds this period due again: " + after.nextDueAt());
+        Assertions.assertNull(after.lastBatchId(), "no batch was created by this tick");
         Assertions.assertEquals(1, batches.findForTenant("tick-dup", null, 10).size());
+        Assertions.assertTrue(mine(tick.run(), "tick-dup").isEmpty(), "and the next tick does not see it due");
+    }
+
+    @Test
+    void aCadenceFinerThanMonthlyIsNeverDueAgainInTheSameMonth() {
+        // Every Monday: after the month's batch, the next due date must be the first Monday of a
+        // later month, else the following Monday would find the month's batch and stick.
+        Instant due = Instant.now().minusSeconds(60);
+        Schedule weekly = Schedule.create(
+                "tick-weekly",
+                "candor",
+                Cadence.cron("0 0 * * 1"),
+                ZoneId.of("UTC"),
+                CRITERIA,
+                "tpl",
+                due,
+                "user:ops",
+                Instant.now());
+        transactions.run(session -> {
+            schedules.insert(session, weekly);
+            return null;
+        });
+
+        TickJob.TickResult result = tick.run();
+
+        Assertions.assertEquals(1, mine(result, "tick-weekly").size());
+        Schedule after = schedules.find("tick-weekly", "candor").orElseThrow();
+        YearMonth batchPeriod = YearMonth.from(due.atZone(ZoneId.of("UTC")));
+        YearMonth nextPeriod = YearMonth.from(after.nextDueAt().atZone(ZoneId.of("UTC")));
+        Assertions.assertEquals(
+                batchPeriod.plusMonths(1), nextPeriod, after.nextDueAt().toString());
+        Assertions.assertEquals(
+                java.time.DayOfWeek.MONDAY,
+                after.nextDueAt().atZone(ZoneId.of("UTC")).getDayOfWeek());
     }
 }

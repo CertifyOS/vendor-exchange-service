@@ -126,6 +126,8 @@ class ExportLaneIT {
 
     @BeforeEach
     void before() {
+        // The journal is shared across scenarios on one server; counts below are per scenario.
+        WireMockUpstreams.resetRequests();
         Mockito.when(google.idToken("test-dal-iap-client-id")).thenReturn("dal-id-token");
         Mockito.when(google.idToken("/projects/1/global/backendServices/2")).thenReturn("iap-token");
         Mockito.when(google.idToken("test-egress-iap-client-id")).thenReturn("egress-token");

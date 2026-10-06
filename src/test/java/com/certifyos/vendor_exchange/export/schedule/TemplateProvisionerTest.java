@@ -126,6 +126,35 @@ class TemplateProvisionerTest {
     }
 
     @Test
+    void anHttpErrorFromListOrCreateIs503ApiLayerUnavailable() {
+        Mockito.when(apiLayer.listEgressTemplates(
+                        TENANT, TemplateProvisioner.TEMPLATE_NAME, "active", "practitioner", 0, 10))
+                .thenThrow(new WebApplicationException(Response.status(502).build()));
+        ProblemException list =
+                Assertions.assertThrows(ProblemException.class, () -> provisioner.provision(TENANT, Optional.empty()));
+        Assertions.assertEquals(503, list.status());
+        Assertions.assertEquals("API_LAYER_UNAVAILABLE", list.code());
+
+        Mockito.reset(apiLayer);
+        listAnswers();
+        Mockito.when(apiLayer.createEgressTemplate(
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any(),
+                        ArgumentMatchers.any()))
+                .thenThrow(new WebApplicationException(Response.status(400).build()));
+        ProblemException create =
+                Assertions.assertThrows(ProblemException.class, () -> provisioner.provision(TENANT, Optional.empty()));
+        Assertions.assertEquals("API_LAYER_UNAVAILABLE", create.code());
+        Assertions.assertTrue(create.getMessage().contains("400"), create.getMessage());
+    }
+
+    @Test
     void unreachableOrUnconfiguredApiLayerIs503() {
         Mockito.when(apiLayer.listEgressTemplates(
                         ArgumentMatchers.anyString(),

@@ -104,7 +104,7 @@ public class BatchLifecycle {
             AuditEvent companion) {
         ExportBatch batch =
                 ExportBatch.scheduled(schedule.tenantId(), schedule.vendor(), period, seq, schedule.selection(), now);
-        Instant nextDueAt = schedule.cadence().next(now, schedule.timezone());
+        Instant nextDueAt = schedule.cadence().nextAfterPeriod(now, schedule.timezone(), period);
         UUID jobId = JobIds.of(SelectJob.NAME, batch.id(), batch.attempt());
         AuditEvent event = AuditEvent.forBatch(
                         AuditEventType.EXPORT_BATCH_SCHEDULED,
@@ -142,6 +142,33 @@ public class BatchLifecycle {
         metrics.batchCreated(schedule.tenantId(), schedule.vendor());
         LOG.infof("%s scheduled by %s (%s), select job %s, next due %s", batch.id(), actor, trigger, jobId, nextDueAt);
         return Optional.of(new Scheduled(batch, jobId, nextDueAt));
+    }
+
+    /**
+     * The tick found the period's batch already created (a race with run-now, or a batch created
+     * before this rule existed): move the schedule's next due instant past that period so it is not
+     * due again for the same month, without touching {@code lastBatchId}. A schedule changed under
+     * the tick is left as is; the next tick reads it again.
+     *
+     * @param schedule the schedule as the tick read it
+     * @param period the month that already has its batch
+     * @param now the time of the write
+     * @return the new next due instant, or empty when the schedule had changed
+     */
+    public Optional<Instant> skipPeriod(Schedule schedule, YearMonth period, Instant now) {
+        Instant nextDueAt = schedule.cadence().nextAfterPeriod(now, schedule.timezone(), period);
+        Bson update = Updates.combine(
+                Updates.set("nextDueAt", nextDueAt),
+                Updates.set("updatedBy", com.certifyos.vendor_exchange.audit.Actors.SYSTEM),
+                Updates.set("updatedAt", now),
+                Updates.inc("version", 1L));
+        boolean moved =
+                transactions.run(session -> schedules.update(session, schedule.id(), schedule.version(), update));
+        if (moved) {
+            LOG.infof("%s: %s already has its batch; next due %s", schedule.id(), period, nextDueAt);
+            return Optional.of(nextDueAt);
+        }
+        return Optional.empty();
     }
 
     /**

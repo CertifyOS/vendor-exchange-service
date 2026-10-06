@@ -248,6 +248,22 @@ class SelectJobIT {
     }
 
     @Test
+    void anNpiTwiceOnOnePageIsRegisteredOnce() {
+        String tenant = "sel-dup";
+        WireMockUpstreams.stubFor(page(tenant, 0)
+                .willReturn(WireMock.okJson("{\"data\":[{\"id\":\"p-a\",\"npi\":\"1234567893\"},"
+                        + "{\"id\":\"p-b\",\"npi\":\"1234567893\"},"
+                        + "{\"id\":\"p-c\",\"npi\":\"2345678918\"}],\"totalCount\":3}")));
+        ExportBatch batch = scheduled(tenant);
+
+        select.run(new SelectJobRequest(batch.id(), 1));
+
+        Assertions.assertEquals(
+                BatchState.NPIS_SELECTED, batches.find(batch.id()).orElseThrow().state());
+        Assertions.assertEquals(2, npis.countForBatch(batch.id()));
+    }
+
+    @Test
     void aBatchInAnotherStateIsANoOp() {
         ExportBatch batch = scheduled("sel-noop");
         transactions.run(session -> {

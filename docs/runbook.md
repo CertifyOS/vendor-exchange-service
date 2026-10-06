@@ -45,7 +45,7 @@ git commit terraform/internal/image.auto.tfvars
 
 Rollback: `make rollback-api PREVIOUS_TEMPLATE=<self link>` and the same for `worker`. Template self links are listed by `gcloud compute instance-templates list --filter='name~vendor-exchange'`; the newest two are the current ones.
 
-Kill switch: set `VENDOR_EXCHANGE_ENABLED=false` on both templates (edit `compute.tf`'s `env_common`, `make create-template`, `make rollout-api`, `make rollout-worker`). The tick inserts nothing, jobs exit as no-ops, events are acknowledged and ignored. Rows stay where they are.
+Kill switch: set `VENDOR_EXCHANGE_ENABLED=false` on both templates (edit `compute.tf`'s `env_common`, `make create-template`, `make rollout-api`, `make rollout-worker`). The tick inserts nothing, jobs exit as no-ops, events are acknowledged and ignored. Rows stay where they are. The one exception is the deadline check: it fails and JobRunr retries it with backoff (about 2.7 hours over 8 retries), because it is the only thing that moves a batch whose completion event was missed; if the switch stays off longer, those batches end `FAILED` at `EGRESS` (alert E4) and an operator `retry` resumes them.
 
 ## 4. Pending hook-ups and how each one lands
 
