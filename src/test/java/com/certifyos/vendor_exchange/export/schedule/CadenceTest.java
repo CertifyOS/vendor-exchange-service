@@ -34,6 +34,32 @@ class CadenceTest {
     }
 
     @Test
+    void nextAfterPeriodSkipsTheRestOfTheBatchMonth() {
+        ZoneId utc = ZoneId.of("UTC");
+        // run-now on Oct 6 with a day-15 schedule: Oct 15 would find October's batch; Nov 15 is next.
+        Assertions.assertEquals(
+                Instant.parse("2026-11-15T00:00:00Z"),
+                Cadence.monthly(15)
+                        .nextAfterPeriod(Instant.parse("2026-10-06T10:00:00Z"), utc, java.time.YearMonth.of(2026, 10)));
+        // weekly cron: first Monday of November, not the next Monday in October.
+        Assertions.assertEquals(
+                Instant.parse("2026-11-02T00:00:00Z"),
+                Cadence.cron("0 0 * * 1")
+                        .nextAfterPeriod(Instant.parse("2026-10-05T00:00:00Z"), utc, java.time.YearMonth.of(2026, 10)));
+        // the tick on the cadence day: same answer as before the fix.
+        Assertions.assertEquals(
+                Instant.parse("2026-11-01T04:00:00Z"),
+                Cadence.monthly(1)
+                        .nextAfterPeriod(
+                                Instant.parse("2026-10-01T06:00:00Z"), NEW_YORK, java.time.YearMonth.of(2026, 10)));
+        // a late batch whose month is already over: never in the past.
+        Instant late = Instant.parse("2026-12-03T00:00:00Z");
+        Assertions.assertTrue(Cadence.monthly(1)
+                .nextAfterPeriod(late, utc, java.time.YearMonth.of(2026, 10))
+                .isAfter(late));
+    }
+
+    @Test
     void lastOccurrenceBetweenIsTheMostRecentMissedPeriod() {
         Cadence first = Cadence.monthly(1);
         ZoneId utc = ZoneId.of("UTC");

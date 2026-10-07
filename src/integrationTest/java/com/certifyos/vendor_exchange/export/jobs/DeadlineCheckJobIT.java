@@ -56,6 +56,9 @@ class DeadlineCheckJobIT {
     @Inject
     StorageProvider storage;
 
+    @Inject
+    JobEnqueuer enqueuer;
+
     @InjectMock
     GoogleIdTokenService google;
 
@@ -130,9 +133,14 @@ class DeadlineCheckJobIT {
     void failedFailsTheBatchAtEgress() {
         ExportBatch batch = requested("dl-fail", Duration.ofHours(6));
         stubStatus(batch, "FAILED", false);
+        UUID running = enqueuer.deadlineCheck(batch.id(), 1, 1, Instant.now().plusSeconds(3600));
 
         job.run(new DeadlineCheckJobRequest(batch.id(), 1, 1));
 
+        Assertions.assertEquals(
+                StateName.SCHEDULED,
+                storage.getJobById(running).getState(),
+                "the deadline check does not delete the job it runs as");
         ExportBatch after = batches.find(batch.id()).orElseThrow();
         Assertions.assertEquals(BatchState.FAILED, after.state());
         Assertions.assertEquals(ExportBatch.FailedStep.EGRESS, after.failedStep());
@@ -188,6 +196,27 @@ class DeadlineCheckJobIT {
                 .orElseThrow();
         Assertions.assertEquals("EGRESS_DID_NOT_FINISH", failed.detail().get("cause"));
         Assertions.assertTrue(types(batch).contains(AuditEventType.EXPORT_PRIOR_ATTEMPT_CANCELLED));
+    }
+
+    @Test
+    void anUnreachableCancelAtCheckTwoStillAbandonsTheBatch() {
+        ExportBatch batch = requested("dl-abandon-down", Duration.ofHours(48));
+        stubStatus(batch, "EXPORTING_NDJSON", false);
+        WireMockUpstreams.stubFor(WireMock.post(WireMock.urlEqualTo("/api/v1/egress/jobs/practitioner/"
+                        + batch.tenantId() + "/" + batch.egress().correlationId() + "/cancel"))
+                .willReturn(WireMock.aResponse()
+                        .withFault(com.github.tomakehurst.wiremock.http.Fault.CONNECTION_RESET_BY_PEER)));
+
+        job.run(new DeadlineCheckJobRequest(batch.id(), 1, 2));
+
+        Assertions.assertEquals(
+                BatchState.FAILED, batches.find(batch.id()).orElseThrow().state());
+        AuditEvent failed = audit.findForBatch(batch.id(), 20).stream()
+                .filter(found -> found.type() == AuditEventType.EXPORT_BATCH_FAILED)
+                .findFirst()
+                .orElseThrow();
+        Assertions.assertEquals("EGRESS_DID_NOT_FINISH", failed.detail().get("cause"));
+        Assertions.assertTrue(types(batch).contains(AuditEventType.EXPORT_PRIOR_ATTEMPT_CANCEL_REJECTED));
     }
 
     @Test

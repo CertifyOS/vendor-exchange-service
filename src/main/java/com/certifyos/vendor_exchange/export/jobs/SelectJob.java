@@ -90,17 +90,10 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
         }
         while (true) {
             PagedPractitioners result = apiLayer.practitionerFindMany(batch.tenantId(), filter, page, PAGE_SIZE);
-            List<PractitionerRef> data = result.data();
-            List<ExportNpi> rows = new ArrayList<>(data.size());
-            int skipped = 0;
             Instant now = clock.instant();
-            for (PractitionerRef ref : data) {
-                if (ref.npi() == null || !NPI.matcher(ref.npi()).matches()) {
-                    skipped++;
-                    continue;
-                }
-                rows.add(ExportNpi.of(batch.id(), batch.tenantId(), ref.npi(), ref.id(), now));
-            }
+            PageRows built = rows(batch, result.data(), now);
+            List<ExportNpi> rows = built.rows();
+            int skipped = built.skipped();
             if (skipped > 0) {
                 LOG.warnf("%s page %d: %d practitioners without a ten-digit NPI skipped", batch.id(), page, skipped);
             }
@@ -118,6 +111,28 @@ public class SelectJob implements JobRequestHandler<SelectJobRequest> {
         } else {
             lifecycle.completeSelection(batch, page + 1, registered, durationMs, clock.instant());
         }
+    }
+
+    /** One page's registry rows and the count of practitioners without a usable NPI. */
+    private record PageRows(List<ExportNpi> rows, int skipped) {}
+
+    /**
+     * Turns one api-layer page into registry rows: practitioners without a ten-digit NPI are
+     * skipped and counted, and an NPI is kept once (two practitioners sharing an NPI on one page
+     * would otherwise be two upserts of one {@code _id} in a single bulk write).
+     */
+    private static PageRows rows(ExportBatch batch, List<PractitionerRef> data, Instant now) {
+        List<ExportNpi> rows = new ArrayList<>(data.size());
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        int skipped = 0;
+        for (PractitionerRef ref : data) {
+            if (ref.npi() == null || !NPI.matcher(ref.npi()).matches()) {
+                skipped++;
+            } else if (seen.add(ref.npi())) {
+                rows.add(ExportNpi.of(batch.id(), batch.tenantId(), ref.npi(), ref.id(), now));
+            }
+        }
+        return new PageRows(rows, skipped);
     }
 
     private static boolean isLast(PagedPractitioners result, int page) {

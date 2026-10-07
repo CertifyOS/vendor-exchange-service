@@ -65,6 +65,23 @@ public record Cadence(Type type, Integer dayOfMonth, String expression) {
     }
 
     /**
+     * The first occurrence that is after {@code now} and falls in a month after {@code period}, in
+     * the schedule's timezone. The schedule's next due instant after a batch for {@code period}:
+     * an occurrence still inside that month would find the month's batch already created and be
+     * skipped forever (run-now before the cadence day, or any cron finer than monthly).
+     *
+     * @param now the time of the write
+     * @param zone the schedule's timezone
+     * @param period the month the batch just created is for
+     * @return the next occurrence, UTC
+     */
+    public Instant nextAfterPeriod(Instant now, ZoneId zone, java.time.YearMonth period) {
+        Instant monthStart = period.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
+        Instant from = now.isAfter(monthStart) ? now : monthStart.minusNanos(1);
+        return next(from, zone);
+    }
+
+    /**
      * The most recent occurrence at or after {@code from} and not after {@code until}, for a
      * schedule re-enabled with catch-up: the one missed period to run now.
      *

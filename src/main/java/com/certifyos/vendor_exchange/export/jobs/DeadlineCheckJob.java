@@ -69,6 +69,14 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
     @Job(name = "deadline-check %0")
     public void run(DeadlineCheckJobRequest request) {
         try (JobLogContext ignored = JobLogContext.open(request.exportBatchId(), JobLogContext.currentJob())) {
+            if (!support.enabled()) {
+                // Not a silent no-op like the other jobs: this one-shot check is the only thing that
+                // moves an EGRESS_REQUESTED batch whose event was missed, and the reconciler never
+                // re-enqueues that state. Failing makes JobRunr retry it with backoff until the
+                // service is enabled again; if the switch stays off past the retries, the final
+                // failure filter marks the batch FAILED at EGRESS, where alert E4 and retry find it.
+                throw new IllegalStateException("service disabled; deadline check " + request + " deferred to a retry");
+            }
             Optional<ExportBatch> loaded =
                     support.loadExpecting(NAME, request.exportBatchId(), BatchState.EGRESS_REQUESTED);
             if (loaded.isEmpty()) {
@@ -105,7 +113,8 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
                     BatchCompletion.EGRESS_FAILED,
                     "egress reported " + phase + " at deadline check " + check,
                     List.of(missed(batch, check, phase, hours, now)),
-                    now);
+                    now,
+                    false);
             return;
         }
         if (check == 1) {
@@ -127,7 +136,8 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
                 BatchCompletion.EGRESS_DID_NOT_FINISH,
                 "egress still " + phase + " " + hours + " h after the request",
                 List.of(),
-                now);
+                now,
+                false);
     }
 
     private void cancel(ExportBatch batch, String correlationId, Instant now) {
@@ -138,6 +148,9 @@ public class DeadlineCheckJob implements JobRequestHandler<DeadlineCheckJobReque
             int status =
                     refused.getResponse() == null ? 0 : refused.getResponse().getStatus();
             lifecycle.priorAttemptCancel(batch, correlationId, false, "HTTP " + status, now);
+        } catch (jakarta.ws.rs.ProcessingException unreachable) {
+            // Best effort: an unreachable egress must not keep the batch from being abandoned.
+            lifecycle.priorAttemptCancel(batch, correlationId, false, "unreachable: " + unreachable.getMessage(), now);
         }
     }
 

@@ -136,6 +136,31 @@ public class BatchCompletion {
             String lastError,
             List<AuditEvent> companions,
             Instant now) {
+        return failed(batch, from, cause, lastError, companions, now, true);
+    }
+
+    /**
+     * As {@link #failed(ExportBatch, BatchState, String, String, List, Instant)}, choosing whether
+     * the stored deadline job is deleted. The deadline check passes false: the stored id is the job
+     * that is running, and deleting a processing JobRunr job makes its own success write fail.
+     *
+     * @param batch the batch
+     * @param from the state it is in
+     * @param cause one of the constants on this class
+     * @param lastError what was observed
+     * @param companions events to commit with the transition
+     * @param now the time of the write
+     * @param deleteDeadlineJob whether to delete the stored deadline job after the commit
+     * @return true when the batch was moved
+     */
+    public boolean failed(
+            ExportBatch batch,
+            BatchState from,
+            String cause,
+            String lastError,
+            List<AuditEvent> companions,
+            Instant now,
+            boolean deleteDeadlineJob) {
         Bson updates = Updates.combine(
                 Updates.set("failedStep", ExportBatch.FailedStep.EGRESS.name()), Updates.set("lastError", lastError));
         AuditEvent event = AuditEvent.forBatch(
@@ -152,7 +177,9 @@ public class BatchCompletion {
         if (!transition(batch, from, BatchState.FAILED, updates, event, companions, now)) {
             return false;
         }
-        deleteDeadline(batch);
+        if (deleteDeadlineJob) {
+            deleteDeadline(batch);
+        }
         metrics.egressFailed(batch.tenantId(), cause);
         LOG.warnf("%s FAILED at EGRESS (%s): %s", batch.id(), cause, lastError);
         return true;

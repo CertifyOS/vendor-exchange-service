@@ -64,6 +64,12 @@ public class TemplateProvisioner {
             LOG.warnf(
                     "api-layer unreachable while provisioning a template for %s: %s", tenantId, unreachable.toString());
             throw ProblemException.unavailable("API_LAYER_UNAVAILABLE", "api-layer could not be reached");
+        } catch (WebApplicationException refused) {
+            int status =
+                    refused.getResponse() == null ? 0 : refused.getResponse().getStatus();
+            LOG.warnf("api-layer answered %d while provisioning a template for %s", status, tenantId);
+            throw ProblemException.unavailable(
+                    "API_LAYER_UNAVAILABLE", "api-layer answered " + status + " to the template list or create");
         }
     }
 
